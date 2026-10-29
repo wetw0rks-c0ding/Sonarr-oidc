@@ -60,8 +60,32 @@ namespace NzbDrone.Http.Authentication
             {
                 if (policyName.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
+                    var authenticationMethod = _config.EffectiveAuthenticationMethod().ToString();
+                    var schemes = new System.Collections.Generic.List<string>
+                    {
+                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        "API",
+                        "Forms",
+                        "Bearer"
+                    };
+
+                    var exists = false;
+                    foreach (var scheme in schemes)
+                    {
+                        if (string.Equals(scheme, authenticationMethod, StringComparison.OrdinalIgnoreCase))
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists)
+                    {
+                        schemes.Add(authenticationMethod);
+                    }
+
                     var policy = new AuthorizationPolicyBuilder()
-                        .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme, "API", "Forms", "Bearer")
+                        .AddAuthenticationSchemes(schemes.ToArray())
                         .RequireAuthenticatedUser()
                         .AddRequirements(new PermissionRequirement(role));
 

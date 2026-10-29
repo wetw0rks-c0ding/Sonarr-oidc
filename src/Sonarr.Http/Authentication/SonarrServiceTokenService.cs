@@ -17,6 +17,8 @@ namespace Sonarr.Http.Authentication
         string MintToken(string subject, SonarrRole role);
 
         ClaimsPrincipal ValidateToken(string token);
+
+        SecurityKey SigningKey { get; }
     }
 
     public class SonarrServiceTokenService : ISonarrServiceTokenService
@@ -26,6 +28,7 @@ namespace Sonarr.Http.Authentication
         private const int KeySizeBytes = 32;
 
         private readonly byte[] _key;
+        private readonly SymmetricSecurityKey _signingKey;
 
         public SonarrServiceTokenService(IAppFolderInfo appFolderInfo)
         {
@@ -41,7 +44,11 @@ namespace Sonarr.Http.Authentication
             {
                 throw new InvalidOperationException("Service token signing key must be at least 256 bits (32 bytes).");
             }
+
+            _signingKey = new SymmetricSecurityKey(_key);
         }
+
+        public SecurityKey SigningKey => _signingKey;
 
         private static byte[] LoadOrCreateKey(string keyPath)
         {

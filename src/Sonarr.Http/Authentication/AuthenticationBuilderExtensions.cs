@@ -66,8 +66,7 @@ namespace Sonarr.Http.Authentication
             builder.Services.AddOptions<JwtBearerOptions>("Bearer")
                 .Configure<ISonarrServiceTokenService>((options, tokenService) =>
                 {
-                    var key = GetServiceTokenKey(tokenService);
-                    if (key == null)
+                    if (tokenService == null || tokenService.SigningKey == null)
                     {
                         return;
                     }
@@ -80,7 +79,7 @@ namespace Sonarr.Http.Authentication
                         ValidAudience = "sonarr",
                         ValidateLifetime = true,
                         ClockSkew = TimeSpan.FromMinutes(2),
-                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        IssuerSigningKey = tokenService.SigningKey,
                         NameClaimType = "sub",
                         RoleClaimType = "role"
                     };
@@ -124,22 +123,6 @@ namespace Sonarr.Http.Authentication
                 });
 
             return builder.AddJwtBearer("Bearer", options => { });
-        }
-
-        private static byte[] GetServiceTokenKey(ISonarrServiceTokenService tokenService)
-        {
-            if (tokenService == null)
-            {
-                return null;
-            }
-
-            var field = tokenService.GetType().GetField("_key", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            if (field != null && field.GetValue(tokenService) is byte[] key)
-            {
-                return key;
-            }
-
-            return null;
         }
 
         private static AuthenticationBuilder AddApiKey(this AuthenticationBuilder authenticationBuilder, string name, Action<ApiKeyAuthenticationOptions> options)
