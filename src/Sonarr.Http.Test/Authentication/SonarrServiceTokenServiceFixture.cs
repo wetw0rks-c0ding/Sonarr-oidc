@@ -128,5 +128,16 @@ namespace Sonarr.Http.Test.Authentication
             Assert.That(SonarrRolePermissions.ForRole(SonarrRole.Manage), Is.EqualTo(new[] { "UI.Read", "UI.Add", "UI.Manage" }));
             Assert.That(SonarrRolePermissions.ForRole(SonarrRole.Admin), Is.EqualTo(new[] { "UI.Read", "UI.Add", "UI.Manage", "UI.Admin" }));
         }
+
+        [Test]
+        public void should_mint_token_that_validates_with_bearer_claims_mapped()
+        {
+            var token = Subject.MintToken("alice", SonarrRole.Manage);
+            var principal = Subject.ValidateToken(token);
+
+            Assert.That(principal, Is.Not.Null);
+            Assert.That(principal.FindFirst("sub")?.Value, Is.EqualTo("alice"));
+            Assert.That(principal.FindFirst("role")?.Value, Is.EqualTo("Manage"));
+        }
     }
 }

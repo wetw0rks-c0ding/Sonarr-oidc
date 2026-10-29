@@ -10,10 +10,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using NLog;
 using NzbDrone.Common.Extensions;
@@ -42,7 +44,7 @@ namespace Sonarr.Http.Authentication
             services.AddSingleton<ISonarrServiceTokenService, SonarrServiceTokenService>();
             services.AddSingleton<IAuthentikTokenValidationService, AuthentikTokenValidationService>();
 
-            return services.AddAuthentication(options =>
+            var builder = services.AddAuthentication(options =>
                 {
                     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
                 })
@@ -60,6 +62,84 @@ namespace Sonarr.Http.Authentication
                     options.HeaderName = "X-Api-Key";
                     options.QueryName = "access_token";
                 });
+
+            builder.Services.AddOptions<JwtBearerOptions>("Bearer")
+                .Configure<ISonarrServiceTokenService>((options, tokenService) =>
+                {
+                    var key = GetServiceTokenKey(tokenService);
+                    if (key == null)
+                    {
+                        return;
+                    }
+
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidIssuer = "sonarr",
+                        ValidateAudience = true,
+                        ValidAudience = "sonarr",
+                        ValidateLifetime = true,
+                        ClockSkew = TimeSpan.FromMinutes(2),
+                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        NameClaimType = "sub",
+                        RoleClaimType = "role"
+                    };
+
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnTokenValidated = context =>
+                        {
+                            var principal = context.Principal;
+                            if (principal == null)
+                            {
+                                return Task.CompletedTask;
+                            }
+
+                            var identity = principal.Identity as ClaimsIdentity ?? new ClaimsIdentity(principal.Claims, "Bearer");
+                            if (principal.Identity != principal.Identities.FirstOrDefault() || principal.Identity is not ClaimsIdentity)
+                            {
+                                // ensure claims are on a ClaimsIdentity we can modify
+                            }
+
+                            var subClaim = principal.FindFirst("sub") ?? principal.FindFirst(ClaimTypes.NameIdentifier);
+                            if (subClaim != null && principal.FindFirst("oidc_sub") == null)
+                            {
+                                identity.AddClaim(new Claim("oidc_sub", subClaim.Value));
+                            }
+
+                            var roleClaim = principal.FindFirst("role") ?? principal.FindFirst(ClaimTypes.Role);
+                            if (roleClaim != null && principal.FindFirst("sonarr_role") == null)
+                            {
+                                identity.AddClaim(new Claim("sonarr_role", roleClaim.Value));
+                            }
+
+                            if (identity != context.Principal?.Identity && context.Principal != null)
+                            {
+                                context.Principal.AddIdentity(identity);
+                            }
+
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+
+            return builder.AddJwtBearer("Bearer", options => { });
+        }
+
+        private static byte[] GetServiceTokenKey(ISonarrServiceTokenService tokenService)
+        {
+            if (tokenService == null)
+            {
+                return null;
+            }
+
+            var field = tokenService.GetType().GetField("_key", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (field != null && field.GetValue(tokenService) is byte[] key)
+            {
+                return key;
+            }
+
+            return null;
         }
 
         private static AuthenticationBuilder AddApiKey(this AuthenticationBuilder authenticationBuilder, string name, Action<ApiKeyAuthenticationOptions> options)
