@@ -21,9 +21,13 @@ RUN dotnet msbuild -restore src/Sonarr.sln \
         -p:Platform=Posix \
         -p:RuntimeIdentifiers=linux-x64 \
         -p:EnableWindowsTargeting=true \
+        -p:TreatWarningsAsErrors=false \
         -t:PublishAllRids \
     && mkdir -p /app/publish \
     && cp -r _output/net10.0/linux-x64/publish/* /app/publish/
+# NOTE: TreatWarningsAsErrors=false is Docker-only. Newer SDK analyzer
+# versions flag pre-existing upstream code (CA1304/CA1724 in NzbDrone.Common);
+# CI (pinned SDK) remains the strict gate.
 COPY --from=frontend /src/_output/UI /app/publish/UI
 
 # ---------- Runtime ----------
