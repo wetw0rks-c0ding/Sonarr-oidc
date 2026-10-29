@@ -325,19 +325,40 @@ namespace Sonarr.Http.Authentication
 
                         if (resolvedRole == null)
                         {
-                            var subjectForLog = context.Principal?.FindFirst("sub")?.Value
-                                ?? context.Principal?.FindFirst("preferred_username")?.Value
-                                ?? context.Principal?.FindFirst("email")?.Value;
+                            // Fallback to OidcUserIdentifier for backwards compat when groups don't match (single-user installations)
+                            var configuredUser = configFileProvider.OidcUserIdentifier;
+                            var fallbackSubject = context.Principal?.FindFirst("sub")?.Value;
+                            var fallbackUsername = context.Principal?.FindFirst("preferred_username")?.Value
+                                ?? context.Principal?.FindFirst("email")?.Value
+                                ?? fallbackSubject;
+                            var fallbackEmail = context.Principal?.FindFirst("email")?.Value;
 
-                            Logger.Warn("OIDC user {0} rejected: groups [{1}] not in allow list",
-                                subjectForLog ?? "unknown",
-                                string.Join(",", groups));
+                            if (!string.IsNullOrWhiteSpace(configuredUser) &&
+                                (string.Equals(fallbackUsername, configuredUser, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(fallbackSubject, configuredUser, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(fallbackEmail, configuredUser, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                Logger.Info("OIDC user {0} authorized via OidcUserIdentifier fallback (groups [{1}] not in mapping)",
+                                    fallbackUsername ?? fallbackSubject ?? "unknown",
+                                    string.Join(",", groups));
+                                resolvedRole = SonarrRole.Admin;
+                            }
+                            else
+                            {
+                                var subjectForLog = fallbackSubject
+                                    ?? fallbackUsername
+                                    ?? fallbackEmail;
 
-                            context.Fail("User is not authorized: insufficient group membership");
-                            context.HandleResponse();
-                            context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=insufficient_group");
+                                Logger.Warn("OIDC user {0} rejected: groups [{1}] not in allow list",
+                                    subjectForLog ?? "unknown",
+                                    string.Join(",", groups));
 
-                            return Task.CompletedTask;
+                                context.Fail("User is not authorized: insufficient group membership");
+                                context.HandleResponse();
+                                context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=insufficient_group");
+
+                                return Task.CompletedTask;
+                            }
                         }
 
                         var principal = context.Principal;

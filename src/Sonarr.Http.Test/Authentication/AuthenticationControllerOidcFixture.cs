@@ -133,7 +133,7 @@ namespace Sonarr.Http.Test.Authentication
         }
 
         [Test]
-        public async Task me_invalid_token_returns_401()
+        public void me_invalid_token_returns_401()
         {
             _httpContext.Request.Headers.Authorization = "Bearer bad-token";
             var result = Subject.GetMe();
@@ -141,7 +141,7 @@ namespace Sonarr.Http.Test.Authentication
         }
 
         [Test]
-        public async Task me_missing_user_returns_404()
+        public void me_missing_user_returns_404()
         {
             _httpContext.Request.Headers.Authorization = "Bearer valid-token";
             Mocker.GetMock<IUserRepository>()

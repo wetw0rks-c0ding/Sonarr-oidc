@@ -170,47 +170,8 @@ namespace NzbDrone.Core.Authentication
                 return _repo.Update(user);
             }
 
-            // 2. One-time forms -> OIDC link: forms user with matching username and null subject.
-            User formsUser = null;
-
-            if (username != null)
-            {
-                formsUser = _repo.FindByUsername(normalizedUsername);
-
-                if (formsUser == null)
-                {
-                    formsUser = _repo.FindByUsername(username);
-                }
-
-                if (formsUser == null)
-                {
-                    formsUser = _repo.FindUser(normalizedUsername);
-                }
-
-                if (formsUser == null)
-                {
-                    formsUser = _repo.FindUser(username);
-                }
-
-                if (formsUser == null)
-                {
-                    formsUser = (_repo.All() ?? Enumerable.Empty<User>()).FirstOrDefault(u =>
-                        u.OidcSubject == null &&
-                        string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-                }
-            }
-
-            if (formsUser != null && formsUser.OidcSubject == null)
-            {
-                formsUser.OidcSubject = subject;
-                formsUser.Username = normalizedUsername;
-                formsUser.OidcGroups = groups;
-                formsUser.Role = role;
-
-                return _repo.Update(formsUser);
-            }
-
-            // 3. Insert new OIDC user.
+            // 3. Insert new OIDC user. Forms and OIDC users are kept separate;
+            // no automatic linking by username to avoid account takeover via IdP-controlled preferred_username.
             var newUser = new User
             {
                 Identifier = Guid.NewGuid(),

@@ -5,8 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Xml;
@@ -197,126 +195,7 @@ namespace Sonarr.Http.Authentication
             return TypedResults.Redirect(_configFileProvider.UrlBase + "/");
         }
 
-        [HttpPost("logout/backchannel")]
-        [AllowAnonymous]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> BackchannelLogout([FromForm] string logout_token)
-        {
-            if (string.IsNullOrWhiteSpace(logout_token))
-            {
-                return BadRequest();
-            }
 
-            string sub = null;
-            string sid = null;
-            var hasEvent = false;
-
-            try
-            {
-                var parts = logout_token.Split('.');
-                if (parts.Length != 3)
-                {
-                    _logger.Warn("Backchannel logout token is not a JWT");
-                    return BadRequest();
-                }
-
-                var payloadJson = DecodeBase64Url(parts[1]);
-                using var doc = JsonDocument.Parse(payloadJson);
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("sub", out var subEl) && subEl.ValueKind == JsonValueKind.String)
-                {
-                    sub = subEl.GetString();
-                }
-
-                if (root.TryGetProperty("sid", out var sidEl) && sidEl.ValueKind == JsonValueKind.String)
-                {
-                    sid = sidEl.GetString();
-                }
-
-                if (root.TryGetProperty("events", out var eventsEl))
-                {
-                    if (eventsEl.ValueKind == JsonValueKind.Object)
-                    {
-                        hasEvent = eventsEl.TryGetProperty("http://schemas.openid.net/event/backchannel-logout", out _);
-                    }
-                    else if (eventsEl.ValueKind == JsonValueKind.String)
-                    {
-                        hasEvent = string.Equals(eventsEl.GetString(), "http://schemas.openid.net/event/backchannel-logout", StringComparison.Ordinal);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                _logger.Warn(e, "Failed to decode backchannel logout token");
-                return BadRequest();
-            }
-
-            if (!hasEvent || (string.IsNullOrWhiteSpace(sub) && string.IsNullOrWhiteSpace(sid)))
-            {
-                _logger.Warn("Backchannel logout token missing required claims");
-                return BadRequest();
-            }
-
-            if (!string.IsNullOrWhiteSpace(sub))
-            {
-                try
-                {
-                    var repo = HttpContext.RequestServices.GetService(typeof(IUserRepository)) as IUserRepository;
-                    var user = repo?.FindBySubject(sub);
-                    if (user != null)
-                    {
-                        _logger.Info("Backchannel logout for subject {0} (user {1})", sub, user.Username);
-                    }
-                    else
-                    {
-                        _logger.Info("Backchannel logout for unknown subject {0}", sub);
-                    }
-                }
-                catch (Exception e)
-                {
-                    _logger.Warn(e, "User lookup failed during backchannel logout");
-                }
-            }
-
-            try
-            {
-                await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            }
-            catch (Exception e)
-            {
-                _logger.Warn(e, "SignOut cookie failed during backchannel logout");
-            }
-
-            try
-            {
-                await HttpContext.SignOutAsync(AuthenticationType.Forms.ToString());
-            }
-            catch (Exception e)
-            {
-                _logger.Warn(e, "SignOut forms failed during backchannel logout");
-            }
-
-            return NoContent();
-        }
-
-        private static string DecodeBase64Url(string input)
-        {
-            var s = input.Replace('-', '+').Replace('_', '/');
-            switch (s.Length % 4)
-            {
-                case 2:
-                    s += "==";
-                    break;
-                case 3:
-                    s += "=";
-                    break;
-            }
-
-            var bytes = Convert.FromBase64String(s);
-            return Encoding.UTF8.GetString(bytes);
-        }
 
         private static readonly ConcurrentDictionary<string, Queue<DateTime>> ExchangeRateLimits = new(StringComparer.Ordinal);
         private static readonly object ExchangeRateLock = new();

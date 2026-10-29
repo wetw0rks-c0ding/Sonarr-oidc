@@ -22,20 +22,26 @@ namespace Sonarr.Http.Authentication
 
     public class AuthentikTokenValidationService : IAuthentikTokenValidationService
     {
-        public const string Issuer = "https://auth.piracyhub.win/application/o/seekarr/";
+        // Fallback for tests / backwards compat when OIDC not configured; production should use IConfigFileProvider.OidcAuthority
+        public const string FallbackIssuer = "https://auth.piracyhub.win/application/o/seekarr/";
 
         public const string RequiredAudienceSubstring = "seekarr";
 
         private static readonly Logger Logger = LogManager.GetLogger(nameof(AuthentikTokenValidationService));
 
         private readonly IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
+        private readonly NzbDrone.Core.Configuration.IConfigFileProvider _configFileProvider;
 
-        public AuthentikTokenValidationService(IConfigurationManager<OpenIdConnectConfiguration> configurationManager = null)
+        public AuthentikTokenValidationService(IConfigurationManager<OpenIdConnectConfiguration> configurationManager = null, NzbDrone.Core.Configuration.IConfigFileProvider configFileProvider = null)
         {
+            _configFileProvider = configFileProvider;
+
+            var issuer = GetIssuer();
+
             if (configurationManager == null)
             {
                 var manager = new ConfigurationManager<OpenIdConnectConfiguration>(
-                    Issuer + ".well-known/openid-configuration",
+                    issuer + ".well-known/openid-configuration",
                     new OpenIdConnectConfigurationRetriever())
                 {
                     AutomaticRefreshInterval = TimeSpan.FromHours(24),
@@ -48,6 +54,28 @@ namespace Sonarr.Http.Authentication
             {
                 _configurationManager = configurationManager;
             }
+        }
+
+        private string GetIssuer()
+        {
+            var authority = _configFileProvider?.OidcAuthority;
+            if (!string.IsNullOrWhiteSpace(authority))
+            {
+                return authority.TrimEnd('/') + "/";
+            }
+
+            return FallbackIssuer;
+        }
+
+        private string GetExpectedAudience()
+        {
+            var clientId = _configFileProvider?.OidcClientId;
+            if (!string.IsNullOrWhiteSpace(clientId))
+            {
+                return clientId.Trim();
+            }
+
+            return null;
         }
 
         public async Task<AuthentikValidationResult> ValidateAsync(string token)
@@ -89,13 +117,25 @@ namespace Sonarr.Http.Authentication
                         }
                     }
 
+                    var issuer = GetIssuer();
+                    var expectedAudience = GetExpectedAudience();
+
+                    // If OIDC is not configured, fail closed
+                    if (_configFileProvider != null && string.IsNullOrWhiteSpace(_configFileProvider.OidcAuthority))
+                    {
+                        return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
+                    }
+
                     var parameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
-                        ValidIssuers = new[] { Issuer, Issuer.Replace("https://", "http://") },
+                        ValidIssuer = issuer,
                         ValidateAudience = true,
-                        AudienceValidator = (audiences, securityToken, validationParameters) =>
-                            audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) && audience.Contains(RequiredAudienceSubstring)),
+                        ValidAudience = expectedAudience,
+                        // Fallback to exact audience list when clientId is configured; otherwise use substring for backwards compat in tests
+                        AudienceValidator = expectedAudience != null
+                            ? (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal))
+                            : (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) && audience.Contains(RequiredAudienceSubstring)),
                         ValidateLifetime = true,
                         ClockSkew = TimeSpan.FromMinutes(2),
                         ValidateIssuerSigningKey = true,

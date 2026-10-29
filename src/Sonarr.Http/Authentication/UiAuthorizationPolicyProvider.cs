@@ -60,36 +60,34 @@ namespace NzbDrone.Http.Authentication
             {
                 if (policyName.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
-                    var authenticationMethod = _config.EffectiveAuthenticationMethod().ToString();
+                    var authenticationMethod = _config.EffectiveAuthenticationMethod();
+
+                    var effectiveScheme = authenticationMethod switch
+                    {
+                        AuthenticationType.Oidc => CookieAuthenticationDefaults.AuthenticationScheme,
+                        _ => authenticationMethod.ToString()
+                    };
+
+                    // Only the effective scheme plus API/Bearer; do not include inactive cookie/Forms schemes
                     var schemes = new System.Collections.Generic.List<string>
                     {
-                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        effectiveScheme,
                         "API",
-                        "Forms",
                         "Bearer"
                     };
 
-                    var exists = false;
-                    foreach (var scheme in schemes)
-                    {
-                        if (string.Equals(scheme, authenticationMethod, StringComparison.OrdinalIgnoreCase))
-                        {
-                            exists = true;
-                            break;
-                        }
-                    }
+                    // Validate that effectiveScheme is a registered handler; otherwise PolicyEvaluator would throw
+                    var isRegistered = effectiveScheme.Equals("API", StringComparison.OrdinalIgnoreCase) ||
+                                       effectiveScheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase) ||
+                                       effectiveScheme.Equals(CookieAuthenticationDefaults.AuthenticationScheme, StringComparison.OrdinalIgnoreCase) ||
+                                       effectiveScheme.Equals("Forms", StringComparison.OrdinalIgnoreCase) ||
+                                       effectiveScheme.Equals("External", StringComparison.OrdinalIgnoreCase) ||
+                                       effectiveScheme.Equals(nameof(AuthenticationType.Oidc), StringComparison.OrdinalIgnoreCase);
 
-                    // Only add the effective method's scheme when it names a registered
-                    // handler. AuthenticationMethod maps Basic/None to Forms, so in
-                    // practice this is always Forms, External, or Oidc — all registered.
-                    // An unregistered name (e.g. a future enum value) would make the
-                    // PolicyEvaluator throw instead of reaching the permission check.
-                    if (!exists &&
-                        (authenticationMethod.Equals("Forms", StringComparison.OrdinalIgnoreCase) ||
-                         authenticationMethod.Equals("External", StringComparison.OrdinalIgnoreCase) ||
-                         authenticationMethod.Equals(nameof(AuthenticationType.Oidc), StringComparison.OrdinalIgnoreCase)))
+                    if (!isRegistered)
                     {
-                        schemes.Add(authenticationMethod);
+                        // Fall back to default handling via FallbackPolicyProvider
+                        return FallbackPolicyProvider.GetPolicyAsync(policyName);
                     }
 
                     var policy = new AuthorizationPolicyBuilder()
