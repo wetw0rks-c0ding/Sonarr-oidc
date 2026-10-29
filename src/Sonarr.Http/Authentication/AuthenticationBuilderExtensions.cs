@@ -90,6 +90,12 @@ namespace Sonarr.Http.Authentication
                     options.Cookie.IsEssential = true;
                     options.Events.OnValidatePrincipal = context =>
                     {
+                        if (configFileProvider.EffectiveAuthenticationMethod() == AuthenticationType.Oidc &&
+                            context.Principal?.FindFirst("oidc_sub") != null)
+                        {
+                            return Task.CompletedTask;
+                        }
+
                         var configuredUser = configFileProvider.OidcUserIdentifier;
 
                         if (configFileProvider.EffectiveAuthenticationMethod() == AuthenticationType.Oidc &&
@@ -153,11 +159,8 @@ namespace Sonarr.Http.Authentication
                             return Task.CompletedTask;
                         }
 
-                        if (!TryAuthorize(configFileProvider, context.Principal, null))
-                        {
-                            context.HandleResponse();
-                            context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=true");
-                        }
+                        context.HandleResponse();
+                        context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=true");
 
                         return Task.CompletedTask;
                     };
@@ -185,12 +188,64 @@ namespace Sonarr.Http.Authentication
                         return Task.CompletedTask;
                     };
 
-                    // Custom event to validate only authorized users
-                    options.Events.OnUserInformationReceived = context =>
+                    options.Events.OnTokenValidated = context =>
                     {
-                        if (!TryAuthorize(configFileProvider, context.Principal, context.User.RootElement))
+                        var userService = context.HttpContext.RequestServices.GetService(typeof(IUserService)) as IUserService;
+
+                        var groupsClaimName = configFileProvider.OidcGroupsClaim;
+                        if (groupsClaimName.IsNullOrWhiteSpace())
+                        {
+                            groupsClaimName = "groups";
+                        }
+
+                        var groups = GetGroups(context.Principal, groupsClaimName).ToList();
+
+                        var resolvedRole = OidcGroupMapping.Resolve(groups);
+
+                        if (resolvedRole == null)
+                        {
+                            var subjectForLog = context.Principal?.FindFirst("sub")?.Value
+                                ?? context.Principal?.FindFirst("preferred_username")?.Value
+                                ?? context.Principal?.FindFirst("email")?.Value;
+
+                            Logger.Warn("OIDC user {0} rejected: groups [{1}] not in allow list",
+                                subjectForLog ?? "unknown",
+                                string.Join(",", groups));
+
+                            context.Fail("User is not authorized: insufficient group membership");
+                            context.HandleResponse();
+                            context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=insufficient_group");
+
+                            return Task.CompletedTask;
+                        }
+
+                        var principal = context.Principal;
+                        var subject = principal?.FindFirst("sub")?.Value;
+                        var username = principal?.FindFirst("preferred_username")?.Value
+                            ?? principal?.FindFirst("email")?.Value
+                            ?? subject;
+
+                        if (userService == null)
+                        {
+                            Logger.Error("IUserService is not available; cannot provision OIDC user");
+                        }
+                        else
+                        {
+                            try
+                            {
+                                userService.UpsertOidcUser(subject, username, string.Join(",", groups), resolvedRole.Value);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error(ex, "Failed to upsert OIDC user");
+                            }
+                        }
+
+                        if (!TryAuthorize(configFileProvider, principal, null, resolvedRole.Value, subject, username, groups))
                         {
                             context.Fail("User is not authorized to access this application");
+                            context.HandleResponse();
+                            context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=true");
 
                             return Task.CompletedTask;
                         }
@@ -199,6 +254,9 @@ namespace Sonarr.Http.Authentication
 
                         return Task.CompletedTask;
                     };
+
+                    // no-op: authorization moved to OnTokenValidated
+                    options.Events.OnUserInformationReceived = context => Task.CompletedTask;
                 });
 
             return authenticationBuilder.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options => { })
@@ -239,29 +297,72 @@ namespace Sonarr.Http.Authentication
             return authenticationBuilder.AddCookie(nameof(AuthenticationType.Forms));
         }
 
-        private static bool TryAuthorize(IConfigFileProvider configFileProvider, ClaimsPrincipal principal, JsonElement? user)
+        public static IEnumerable<string> GetGroups(ClaimsPrincipal principal, string claimName)
         {
-            var configuredUser = configFileProvider.OidcUserIdentifier;
+            var groups = new List<string>();
 
-            if (configuredUser.IsNullOrWhiteSpace())
+            if (principal == null || string.IsNullOrWhiteSpace(claimName))
             {
-                Logger.Error("No authorized users configured");
-
-                return false;
+                return groups;
             }
 
-            var identifiers = GetIdentifiers(principal, user);
-
-            if (!identifiers.Any(i => string.Equals(i, configuredUser, StringComparison.OrdinalIgnoreCase)))
+            foreach (var claim in principal.FindAll(claimName))
             {
-                Logger.Error("User '{0}' is not authorized to access this application", identifiers.FirstOrDefault() ?? "unknown");
-
-                return false;
+                SplitAndAdd(groups, claim.Value);
             }
+
+            if (groups.Count == 0 && !string.Equals(claimName, "groups", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var claim in principal.FindAll("groups"))
+                {
+                    SplitAndAdd(groups, claim.Value);
+                }
+            }
+
+            return groups.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static void SplitAndAdd(List<string> target, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            foreach (var part in value.Split(new[] { ',', ' ', ';', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                target.Add(part);
+            }
+        }
+
+        private static bool TryAuthorize(IConfigFileProvider configFileProvider, ClaimsPrincipal principal, JsonElement? user, SonarrRole role, string subject = null, string username = null, IEnumerable<string> groups = null)
+        {
+            if (subject == null)
+            {
+                subject = principal?.FindFirst("sub")?.Value
+                    ?? principal?.FindFirst("oidc_sub")?.Value;
+            }
+
+            if (username == null)
+            {
+                username = principal?.FindFirst("preferred_username")?.Value
+                    ?? principal?.FindFirst("email")?.Value
+                    ?? subject;
+            }
+
+            if (groups == null)
+            {
+                groups = GetGroups(principal, configFileProvider.OidcGroupsClaim);
+            }
+
+            var groupString = string.Join(",", groups);
 
             var claims = new List<Claim>
             {
-                new("user", configuredUser),
+                new("user", username ?? string.Empty),
+                new("role", role.ToString()),
+                new("groups", groupString),
+                new("oidc_sub", subject ?? string.Empty),
                 new("AuthenticationType", nameof(AuthenticationType.Oidc)),
                 new("Provider", "OIDC")
             };
