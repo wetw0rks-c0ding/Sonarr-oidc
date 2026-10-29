@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using NLog;
 using NzbDrone.Common.Extensions;
@@ -80,7 +81,7 @@ namespace Sonarr.Http.Authentication
         private static AuthenticationBuilder AddOidc(this AuthenticationBuilder authenticationBuilder, string name)
         {
             authenticationBuilder.Services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
-                .Configure<IConfigFileProvider>((options, configFileProvider) =>
+                .Configure<IConfigFileProvider, ICertificateValidationService>((options, configFileProvider, certificateValidationService) =>
                 {
                     var instanceName = GetCleanInstanceName(configFileProvider.InstanceName);
 
@@ -91,26 +92,37 @@ namespace Sonarr.Http.Authentication
                     options.ExpireTimeSpan = TimeSpan.FromDays(7);
                     options.SlidingExpiration = true;
                     options.Cookie.IsEssential = true;
-                    options.Events.OnValidatePrincipal = context =>
+                    options.Events.OnValidatePrincipal = async context =>
                     {
                         if (configFileProvider.EffectiveAuthenticationMethod() == AuthenticationType.Oidc &&
                             context.Principal?.FindFirst("oidc_sub") != null)
                         {
-                            return Task.CompletedTask;
+                            // authorized; fall through to refresh handling
                         }
-
-                        var configuredUser = configFileProvider.OidcUserIdentifier;
-
-                        if (configFileProvider.EffectiveAuthenticationMethod() == AuthenticationType.Oidc &&
-                            configuredUser.IsNotNullOrWhiteSpace() &&
-                            string.Equals(context.Principal?.FindFirst("user")?.Value, configuredUser, StringComparison.OrdinalIgnoreCase))
+                        else
                         {
-                            return Task.CompletedTask;
+                            var configuredUser = configFileProvider.OidcUserIdentifier;
+
+                            if (!(configFileProvider.EffectiveAuthenticationMethod() == AuthenticationType.Oidc &&
+                                  configuredUser.IsNotNullOrWhiteSpace() &&
+                                  string.Equals(context.Principal?.FindFirst("user")?.Value, configuredUser, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                context.RejectPrincipal();
+
+                                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+                                return;
+                            }
                         }
 
-                        context.RejectPrincipal();
-
-                        return context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                        try
+                        {
+                            await RefreshOidcTokensAsync(context, configFileProvider, certificateValidationService);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Warn(ex, "OIDC token refresh failed");
+                        }
                     };
 
                     options.Events.OnRedirectToLogin = context => EventOnRedirectCookiesLogin(context, 401);
@@ -270,6 +282,130 @@ namespace Sonarr.Http.Authentication
 
             return authenticationBuilder.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options => { })
                 .AddOpenIdConnect(name, options => { });
+        }
+
+        private static async Task RefreshOidcTokensAsync(CookieValidatePrincipalContext context, IConfigFileProvider configFileProvider, ICertificateValidationService certificateValidationService)
+        {
+            if (configFileProvider.EffectiveAuthenticationMethod() != AuthenticationType.Oidc || !configFileProvider.IsOidcConfigured())
+            {
+                return;
+            }
+
+            var refreshToken = context.Properties.GetTokenValue("refresh_token");
+            var expiresAtRaw = context.Properties.GetTokenValue("expires_at");
+
+            DateTimeOffset? expiresAt = null;
+            if (!string.IsNullOrWhiteSpace(expiresAtRaw) && DateTimeOffset.TryParse(expiresAtRaw, out var parsedExpires))
+            {
+                expiresAt = parsedExpires;
+            }
+
+            var nearExpiry = expiresAt == null || (expiresAt.Value - DateTimeOffset.UtcNow) < TimeSpan.FromMinutes(5);
+            if (!nearExpiry || string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return;
+            }
+
+            string tokenEndpoint = null;
+            var oidcOptionsMonitor = context.HttpContext.RequestServices.GetService(typeof(IOptionsMonitor<OpenIdConnectOptions>)) as IOptionsMonitor<OpenIdConnectOptions>;
+            var oidcOptions = oidcOptionsMonitor?.Get(nameof(AuthenticationType.Oidc));
+            if (oidcOptions?.Configuration != null)
+            {
+                tokenEndpoint = oidcOptions.Configuration.TokenEndpoint;
+            }
+
+            if (string.IsNullOrWhiteSpace(tokenEndpoint) && oidcOptions?.ConfigurationManager != null)
+            {
+                try
+                {
+                    var cfg = await oidcOptions.ConfigurationManager.GetConfigurationAsync(CancellationToken.None);
+                    tokenEndpoint = cfg?.TokenEndpoint;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Failed to discover OIDC configuration");
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(tokenEndpoint))
+            {
+                Logger.Warn("OIDC token endpoint not available; skipping refresh");
+                return;
+            }
+
+            var handler = GetBackchannelHttpHandler(certificateValidationService);
+            using var client = new HttpClient(handler);
+            var form = new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["client_id"] = configFileProvider.OidcClientId ?? string.Empty,
+                ["client_secret"] = configFileProvider.OidcClientSecret ?? string.Empty,
+                ["refresh_token"] = refreshToken
+            };
+
+            var scopes = AuthenticationConfigurationExtensions.GetOidcScopes(configFileProvider.OidcScopes);
+            if (scopes.Length > 0)
+            {
+                form["scope"] = string.Join(" ", scopes);
+            }
+
+            try
+            {
+                var response = await client.PostAsync(tokenEndpoint, new FormUrlEncodedContent(form));
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    Logger.Warn("OIDC token refresh failed: {0} {1}", response.StatusCode, body);
+                    return;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var newAccess = root.TryGetProperty("access_token", out var aEl) ? aEl.GetString() : null;
+                if (string.IsNullOrWhiteSpace(newAccess))
+                {
+                    Logger.Warn("OIDC token refresh response missing access_token");
+                    return;
+                }
+
+                var newRefresh = root.TryGetProperty("refresh_token", out var rEl) ? rEl.GetString() : null;
+                var expiresIn = 3600;
+                if (root.TryGetProperty("expires_in", out var eEl) && eEl.TryGetInt32(out var ei))
+                {
+                    expiresIn = ei;
+                }
+
+                var refreshToStore = string.IsNullOrWhiteSpace(newRefresh) ? refreshToken : newRefresh;
+
+                var estimatedSize = (newAccess?.Length ?? 0) + (refreshToStore?.Length ?? 0) + 200;
+                if (estimatedSize > 3800)
+                {
+                    Logger.Warn("OIDC refresh token too large for cookie; skipping renewal");
+                    return;
+                }
+
+                var tokens = new List<AuthenticationToken>
+                {
+                    new AuthenticationToken { Name = "access_token", Value = newAccess },
+                    new AuthenticationToken { Name = "refresh_token", Value = refreshToStore },
+                    new AuthenticationToken { Name = "expires_at", Value = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToString("o") }
+                };
+
+                var existingIdToken = context.Properties.GetTokenValue("id_token");
+                if (!string.IsNullOrWhiteSpace(existingIdToken))
+                {
+                    tokens.Add(new AuthenticationToken { Name = "id_token", Value = existingIdToken });
+                }
+
+                context.Properties.StoreTokens(tokens);
+                context.ShouldRenew = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "OIDC token refresh request failed");
+            }
         }
 
         private static SocketsHttpHandler GetBackchannelHttpHandler(ICertificateValidationService certificateValidationService)
