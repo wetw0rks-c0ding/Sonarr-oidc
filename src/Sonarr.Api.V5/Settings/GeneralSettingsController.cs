@@ -9,11 +9,13 @@ using NzbDrone.Core.Update;
 using NzbDrone.Core.Validation;
 using NzbDrone.Core.Validation.Paths;
 using Sonarr.Http;
+using Sonarr.Http.Authentication;
 using Sonarr.Http.Validation;
 
 namespace Sonarr.Api.V5.Settings;
 
 [V5ApiController("settings/general")]
+[RequiresPermission(SonarrRole.Admin)]
 public class GeneralSettingsController : SettingsController<GeneralSettingsResource>
 {
     private const string PrivateValue = "********";

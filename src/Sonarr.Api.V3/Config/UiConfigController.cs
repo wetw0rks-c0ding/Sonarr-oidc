@@ -2,14 +2,17 @@ using System.Linq;
 using System.Reflection;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using NzbDrone.Core.Authentication;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Languages;
 using Sonarr.Http;
+using Sonarr.Http.Authentication;
 using Sonarr.Http.REST.Attributes;
 
 namespace Sonarr.Api.V3.Config
 {
     [V3ApiController("config/ui")]
+    [RequiresPermission(SonarrRole.Admin)]
     public class UiConfigController : ConfigController<UiConfigResource>
     {
         private readonly IConfigFileProvider _configFileProvider;

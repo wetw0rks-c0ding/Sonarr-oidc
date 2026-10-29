@@ -13,6 +13,7 @@ using NzbDrone.Core.Update;
 using NzbDrone.Core.Validation;
 using NzbDrone.Core.Validation.Paths;
 using Sonarr.Http;
+using Sonarr.Http.Authentication;
 using Sonarr.Http.REST;
 using Sonarr.Http.REST.Attributes;
 using Sonarr.Http.Validation;
@@ -20,6 +21,7 @@ using Sonarr.Http.Validation;
 namespace Sonarr.Api.V3.Config
 {
     [V3ApiController("config/host")]
+    [RequiresPermission(SonarrRole.Admin)]
     public class HostConfigController : RestController<HostConfigResource>
     {
         private const string PrivateValue = "********";
