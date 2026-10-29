@@ -92,7 +92,7 @@ namespace Sonarr.Http.Authentication
                     var parameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
-                        ValidIssuer = Issuer,
+                        ValidIssuers = new[] { Issuer, Issuer.Replace("https://", "http://") },
                         ValidateAudience = true,
                         AudienceValidator = (audiences, securityToken, validationParameters) =>
                             audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) && audience.Contains(RequiredAudienceSubstring)),

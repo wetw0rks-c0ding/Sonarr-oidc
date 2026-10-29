@@ -215,8 +215,8 @@ namespace NzbDrone.Core.Authentication
             {
                 Identifier = Guid.NewGuid(),
                 Username = normalizedUsername,
-                Password = null,
-                Salt = null,
+                Password = "",
+                Salt = "",
                 Iterations = 0,
                 OidcSubject = subject,
                 OidcGroups = groups,

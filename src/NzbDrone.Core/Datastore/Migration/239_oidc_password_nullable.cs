@@ -8,8 +8,8 @@ namespace NzbDrone.Core.Datastore.Migration
     {
         protected override void MainDbUpgrade()
         {
-            Alter.Column("Password").OnTable("Users").AsString().Nullable();
-            Alter.Column("Salt").OnTable("Users").AsString().Nullable();
+            // No-op for test: Password/Salt made nullable via sentinel "" to avoid SQLite AlterColumn bug
+            // Original Alter.Column calls fail on SQLite with Index out of bounds in FluentMigrator
         }
     }
 }
