@@ -464,12 +464,6 @@ namespace Sonarr.Http.Authentication
                 ["refresh_token"] = refreshToken
             };
 
-            var scopes = AuthenticationConfigurationExtensions.GetOidcScopes(configFileProvider.OidcScopes);
-            if (scopes.Length > 0)
-            {
-                form["scope"] = string.Join(" ", scopes);
-            }
-
             try
             {
                 var response = await client.PostAsync(tokenEndpoint, new FormUrlEncodedContent(form));
