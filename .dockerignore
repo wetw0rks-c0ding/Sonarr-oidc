@@ -12,7 +12,6 @@ frontend/src/**/*.test.*
 node_modules/
 frontend/node_modules/
 docs/
-Logo/
 schemas/
 .vscode/
 .idea/
