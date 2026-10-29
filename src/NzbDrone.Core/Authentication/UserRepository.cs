@@ -9,6 +9,8 @@ namespace NzbDrone.Core.Authentication
     {
         User FindUser(string username);
         User FindUser(Guid identifier);
+        User FindBySubject(string subject);
+        User FindByUsername(string username);
     }
 
     public class UserRepository : BasicRepository<User>, IUserRepository
@@ -26,6 +28,16 @@ namespace NzbDrone.Core.Authentication
         public User FindUser(Guid identifier)
         {
             return Query(x => x.Identifier == identifier).SingleOrDefault();
+        }
+
+        public User FindBySubject(string subject)
+        {
+            return Query(x => x.OidcSubject == subject).SingleOrDefault();
+        }
+
+        public User FindByUsername(string username)
+        {
+            return Query(x => x.Username == username).SingleOrDefault();
         }
     }
 }
