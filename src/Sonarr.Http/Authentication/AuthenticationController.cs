@@ -413,7 +413,7 @@ namespace Sonarr.Http.Authentication
             catch (Exception ex)
             {
                 _logger.Error(ex, "Failed to upsert OIDC user");
-                return TypedResults.Json(new { message = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+                return TypedResults.Json(new { message = "User provisioning failed" }, statusCode: StatusCodes.Status500InternalServerError);
             }
 
             var tokenService = httpContext.RequestServices?.GetService(typeof(ISonarrServiceTokenService)) as ISonarrServiceTokenService;

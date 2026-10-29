@@ -25,6 +25,7 @@ namespace Sonarr.Http.Test.Authentication
             Subject.ControllerContext = new ControllerContext { HttpContext = _httpContext };
 
             var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+            services.AddLogging();
             services.AddSingleton(Mocker.GetMock<IAuthentikTokenValidationService>().Object);
             services.AddSingleton(Mocker.GetMock<ISonarrServiceTokenService>().Object);
             services.AddSingleton(Mocker.GetMock<IUserService>().Object);
@@ -101,6 +102,34 @@ namespace Sonarr.Http.Test.Authentication
             SetSubjectToken("good");
             var result = await Subject.ExchangeOidc(new OidcExchangeRequest("good"));
             ((Microsoft.AspNetCore.Http.IStatusCodeHttpResult)result).StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public async Task exchange_upsert_failure_returns_500_with_fixed_message()
+        {
+            Mocker.GetMock<IAuthentikTokenValidationService>()
+                .Setup(s => s.ValidateAsync("boom"))
+                .ReturnsAsync(new AuthentikValidationResult(true, null, "subject-1", "alice", new System.Collections.Generic.List<string> { "homies" }));
+
+            Mocker.GetMock<IUserService>()
+                .Setup(s => s.UpsertOidcUser(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SonarrRole>()))
+                .Throws(new System.Exception("secret db error"));
+
+            SetSubjectToken("boom");
+            var result = await Subject.ExchangeOidc(new OidcExchangeRequest("boom"));
+            NzbDrone.Test.Common.ExceptionVerification.ExpectedErrors(1);
+            ((Microsoft.AspNetCore.Http.IStatusCodeHttpResult)result).StatusCode.Should().Be(500);
+
+            var ms = new System.IO.MemoryStream();
+            var originalBody = _httpContext.Response.Body;
+            _httpContext.Response.Body = ms;
+            await result.ExecuteAsync(_httpContext);
+            ms.Position = 0;
+            using var reader = new System.IO.StreamReader(ms);
+            var body = await reader.ReadToEndAsync();
+            _httpContext.Response.Body = originalBody;
+            body.Should().Contain("User provisioning failed");
+            body.Should().NotContain("secret db error");
         }
 
         [Test]

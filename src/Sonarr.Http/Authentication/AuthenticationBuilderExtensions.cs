@@ -549,6 +549,17 @@ namespace Sonarr.Http.Authentication
                 new("Provider", "OIDC")
             };
 
+            if (principal != null)
+            {
+                foreach (var identity in principal.Identities)
+                {
+                    foreach (var claim in identity.FindAll("sonarr_role").ToList())
+                    {
+                        identity.RemoveClaim(claim);
+                    }
+                }
+            }
+
             principal?.AddIdentity(new ClaimsIdentity(claims));
 
             return true;
