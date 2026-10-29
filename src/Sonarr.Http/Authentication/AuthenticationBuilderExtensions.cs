@@ -134,12 +134,18 @@ namespace Sonarr.Http.Authentication
                     options.ClientSecret = configFileProvider.OidcClientSecret;
                     options.ResponseType = "code";
                     options.ResponseMode = "query";
+                    options.UsePkce = true;
                     options.BackchannelHttpHandler = GetBackchannelHttpHandler(certificateValidationService);
                     options.Scope.Clear();
 
                     foreach (var scope in AuthenticationConfigurationExtensions.GetOidcScopes(configFileProvider.OidcScopes).Distinct(StringComparer.Ordinal))
                     {
                         options.Scope.Add(scope);
+                    }
+
+                    if (!options.Scope.Contains("offline_access"))
+                    {
+                        options.Scope.Add("offline_access");
                     }
 
                     options.MapInboundClaims = false;
