@@ -11,7 +11,7 @@ RUN yarn install --frozen-lockfile --network-timeout 600000 --network-concurrenc
     && yarn build
 
 # ---------- Backend ----------
-FROM mcr.microsoft.com/dotnet/sdk:10.0-bookworm-slim AS backend
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /src
 COPY global.json ./
 COPY src ./src
@@ -25,7 +25,7 @@ RUN dotnet restore src/Sonarr.sln \
 COPY --from=frontend /src/_output/UI /app/publish/UI
 
 # ---------- Runtime ----------
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-bookworm-slim AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     TZ=Etc/UTC
