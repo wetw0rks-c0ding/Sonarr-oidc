@@ -10,18 +10,20 @@ COPY frontend ./frontend
 RUN yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4 --network-retry-delay 5000 \
     && yarn build
 
-# ---------- Backend ----------
+# ---------- Backend (mirrors CI: msbuild PublishAllRids, self-contained) ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /src
 COPY global.json ./
 COPY src ./src
-RUN dotnet restore src/Sonarr.sln \
-    && dotnet publish src/NzbDrone.Console/Sonarr.Console.csproj -f net10.0 \
-        -c Release \
-        -r linux-x64 \
-        --self-contained false \
+RUN dotnet msbuild -restore src/Sonarr.sln \
+        -p:SelfContained=true \
+        -p:Configuration=Release \
         -p:Platform=Posix \
-        -o /app/publish
+        -p:RuntimeIdentifiers=linux-x64 \
+        -p:EnableWindowsTargeting=true \
+        -t:PublishAllRids \
+    && mkdir -p /app/publish \
+    && cp -r _output/net10.0/linux-x64/publish/* /app/publish/
 COPY --from=frontend /src/_output/UI /app/publish/UI
 
 # ---------- Runtime ----------
@@ -36,4 +38,4 @@ WORKDIR /app
 COPY --from=backend /app/publish ./
 EXPOSE 8989
 VOLUME ["/config"]
-ENTRYPOINT ["dotnet", "/app/Sonarr.dll", "-nobrowser", "-data=/config"]
+ENTRYPOINT ["/app/Sonarr", "-nobrowser", "-data=/config"]
