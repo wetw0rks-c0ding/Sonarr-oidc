@@ -134,6 +134,7 @@ namespace Sonarr.Http.Authentication
                         ValidIssuer = issuer,
                         ValidateAudience = true,
                         ValidAudience = expectedAudience,
+
                         // Fallback to exact audience list when clientId is configured; otherwise use substring for backwards compat in tests
                         AudienceValidator = expectedAudience != null
                             ? (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal))

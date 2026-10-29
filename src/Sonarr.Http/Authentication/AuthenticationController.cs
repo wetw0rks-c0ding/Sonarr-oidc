@@ -195,8 +195,6 @@ namespace Sonarr.Http.Authentication
             return TypedResults.Redirect(_configFileProvider.UrlBase + "/");
         }
 
-
-
         private static readonly ConcurrentDictionary<string, Queue<DateTime>> ExchangeRateLimits = new(StringComparer.Ordinal);
         private static readonly object ExchangeRateLock = new();
 
