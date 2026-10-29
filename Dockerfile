@@ -14,6 +14,7 @@ RUN yarn install --frozen-lockfile --network-timeout 600000 --network-concurrenc
 FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS backend
 WORKDIR /src
 COPY global.json ./
+COPY Logo ./Logo
 COPY src ./src
 RUN dotnet msbuild -restore src/Sonarr.sln \
         -p:SelfContained=true \
