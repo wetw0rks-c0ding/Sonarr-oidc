@@ -7,7 +7,7 @@ FROM node:24-bookworm-slim AS frontend
 WORKDIR /src
 COPY package.json yarn.lock .yarnrc vite.config.ts tsconfig.json index.html ./
 COPY frontend ./frontend
-RUN yarn install --frozen-lockfile --network-timeout 300000 \
+RUN yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4 --network-retry-delay 5000 \
     && yarn build
 
 # ---------- Backend ----------
