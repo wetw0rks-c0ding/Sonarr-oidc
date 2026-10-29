@@ -12,7 +12,6 @@ using Sonarr.Http.REST.Attributes;
 namespace Sonarr.Api.V3.Config
 {
     [V3ApiController("config/ui")]
-    [RequiresPermission(SonarrRole.Admin)]
     public class UiConfigController : ConfigController<UiConfigResource>
     {
         private readonly IConfigFileProvider _configFileProvider;
@@ -34,7 +33,16 @@ namespace Sonarr.Api.V3.Config
                            .WithMessage("The UI Language value cannot be less than 1");
         }
 
+        [HttpGet]
+        [Produces("application/json")]
+        [RequiresPermission(SonarrRole.ReadOnly)]
+        public override UiConfigResource GetConfig()
+        {
+            return base.GetConfig();
+        }
+
         [RestPutById]
+        [RequiresPermission(SonarrRole.Admin)]
         public override ActionResult<UiConfigResource> SaveConfig([FromBody] UiConfigResource resource)
         {
             var dictionary = resource.GetType()

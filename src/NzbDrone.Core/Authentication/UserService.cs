@@ -75,7 +75,23 @@ namespace NzbDrone.Core.Authentication
 
         public User FindUser()
         {
-            return _repo.SingleOrDefault();
+            var local = (_repo.All() ?? Enumerable.Empty<User>())
+                .Where(u => u.OidcSubject == null)
+                .SingleOrDefault();
+
+            if (local == null)
+            {
+                try
+                {
+                    local = _repo.FindLocalUser();
+                }
+                catch
+                {
+                    // Fall back to in-memory scan if the repository does not support FindLocalUser.
+                }
+            }
+
+            return local;
         }
 
         public User FindUser(string username, string password)
@@ -207,7 +223,14 @@ namespace NzbDrone.Core.Authentication
                 Role = role
             };
 
-            return _repo.Insert(newUser);
+            try
+            {
+                return _repo.Insert(newUser);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Failed to insert OIDC user (username may already exist): " + ex.Message, ex);
+            }
         }
 
         private User SetUserHashedPassword(User user, string password)
