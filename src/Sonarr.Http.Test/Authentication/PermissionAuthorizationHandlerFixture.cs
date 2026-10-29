@@ -55,12 +55,21 @@ namespace Sonarr.Http.Test.Authentication
         }
 
         [Test]
-        public void oidc_sub_without_role_defaults_to_admin()
+        public void oidc_sub_without_role_denies()
         {
             var identity = new ClaimsIdentity(new[] { new Claim("oidc_sub", "subject-1") }, "Cookies");
             var principal = new ClaimsPrincipal(identity);
 
-            IsAuthorized(principal, SonarrRole.Admin).Should().BeTrue();
+            IsAuthorized(principal, SonarrRole.Admin).Should().BeFalse();
+        }
+
+        [Test]
+        public void oidc_sub_with_unparseable_sonarr_role_denies()
+        {
+            var identity = new ClaimsIdentity(new[] { new Claim("oidc_sub", "subject-1"), new Claim("sonarr_role", "garbage") }, "Cookies");
+            var principal = new ClaimsPrincipal(identity);
+
+            IsAuthorized(principal, SonarrRole.Admin).Should().BeFalse();
         }
 
         [Test]

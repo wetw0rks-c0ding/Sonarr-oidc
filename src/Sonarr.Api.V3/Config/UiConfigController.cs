@@ -36,7 +36,7 @@ namespace Sonarr.Api.V3.Config
         [HttpGet]
         [Produces("application/json")]
         [RequiresPermission(SonarrRole.ReadOnly)]
-        public override UiConfigResource GetConfig()
+        public new UiConfigResource GetConfig()
         {
             return base.GetConfig();
         }

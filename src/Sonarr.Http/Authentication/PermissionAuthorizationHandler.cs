@@ -11,22 +11,43 @@ namespace Sonarr.Http.Authentication
     {
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
         {
-            var roleClaim = context.User?.FindFirst("role")?.Value;
             var hasOidcSub = context.User?.FindFirst("oidc_sub") != null;
 
-            if (roleClaim == null && !hasOidcSub)
+            if (!hasOidcSub)
             {
-                context.Succeed(requirement);
+                // Forms/ApiKey path: preserve existing bypass/succeed behavior.
+                var roleClaim = context.User?.FindFirst("role")?.Value
+                    ?? context.User?.FindFirst("sonarr_role")?.Value;
+                if (roleClaim == null)
+                {
+                    context.Succeed(requirement);
+                    return Task.CompletedTask;
+                }
+
+                var role = SonarrRole.Admin;
+                if (Enum.TryParse<SonarrRole>(roleClaim, true, out var parsedRole) && Enum.IsDefined(typeof(SonarrRole), parsedRole))
+                {
+                    role = parsedRole;
+                }
+
+                if (role >= requirement.Minimum)
+                {
+                    context.Succeed(requirement);
+                }
+
                 return Task.CompletedTask;
             }
 
-            var role = SonarrRole.Admin;
-            if (roleClaim != null && Enum.TryParse<SonarrRole>(roleClaim, true, out var parsedRole))
+            // OIDC session: require a valid sonarr_role claim.
+            var sonarrRoleClaim = context.User?.FindFirst("sonarr_role")?.Value;
+            if (string.IsNullOrWhiteSpace(sonarrRoleClaim) ||
+                !Enum.TryParse<SonarrRole>(sonarrRoleClaim, true, out var oidcRole) ||
+                !Enum.IsDefined(typeof(SonarrRole), oidcRole))
             {
-                role = parsedRole;
+                return Task.CompletedTask; // deny
             }
 
-            if (role >= requirement.Minimum)
+            if (oidcRole >= requirement.Minimum)
             {
                 context.Succeed(requirement);
             }

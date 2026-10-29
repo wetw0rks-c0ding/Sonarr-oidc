@@ -26,12 +26,6 @@ namespace Sonarr.Http.Authentication
 
         public const string RequiredAudienceSubstring = "seekarr";
 
-        public const string AudienceSubstring = "seekarr";
-
-        public const string RequiredAudience = "seekarr";
-
-        public const string Audience = "seekarr";
-
         private static readonly Logger Logger = LogManager.GetLogger(nameof(AuthentikTokenValidationService));
 
         private readonly IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;

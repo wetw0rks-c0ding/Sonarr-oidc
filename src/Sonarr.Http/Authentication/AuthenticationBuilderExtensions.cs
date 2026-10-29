@@ -179,10 +179,28 @@ namespace Sonarr.Http.Authentication
                     options.Events.OnTicketReceived = context =>
                     {
                         var idToken = context.Properties?.GetTokenValue("id_token");
+                        var existingRefreshToken = context.Properties?.GetTokenValue("refresh_token");
+                        var existingExpiresAt = context.Properties?.GetTokenValue("expires_at");
 
-                        context.Properties?.StoreTokens(idToken.IsNullOrWhiteSpace()
+                        var tokens = new List<AuthenticationToken>();
+                        if (!idToken.IsNullOrWhiteSpace())
+                        {
+                            tokens.Add(new AuthenticationToken { Name = "id_token", Value = idToken });
+                        }
+
+                        if (!existingRefreshToken.IsNullOrWhiteSpace())
+                        {
+                            tokens.Add(new AuthenticationToken { Name = "refresh_token", Value = existingRefreshToken });
+                        }
+
+                        if (!existingExpiresAt.IsNullOrWhiteSpace())
+                        {
+                            tokens.Add(new AuthenticationToken { Name = "expires_at", Value = existingExpiresAt });
+                        }
+
+                        context.Properties?.StoreTokens(tokens.Count == 0
                             ? Array.Empty<AuthenticationToken>()
-                            : [new AuthenticationToken { Name = "id_token", Value = idToken }]);
+                            : tokens.ToArray());
 
                         if (context.Properties?.Items.ContainsKey(AuthorizedProperty) == true)
                         {
@@ -353,7 +371,7 @@ namespace Sonarr.Http.Authentication
             }
 
             var handler = GetBackchannelHttpHandler(certificateValidationService);
-            using var client = new HttpClient(handler);
+            using var client = new HttpClient(handler, disposeHandler: false);
             var form = new Dictionary<string, string>
             {
                 ["grant_type"] = "refresh_token",
@@ -493,7 +511,7 @@ namespace Sonarr.Http.Authentication
                 return;
             }
 
-            foreach (var part in value.Split(new[] { ',', ' ', ';', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var part in value.Split(new[] { ',', ';', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 target.Add(part);
             }
@@ -524,7 +542,7 @@ namespace Sonarr.Http.Authentication
             var claims = new List<Claim>
             {
                 new("user", username ?? string.Empty),
-                new("role", role.ToString()),
+                new("sonarr_role", role.ToString()),
                 new("groups", groupString),
                 new("oidc_sub", subject ?? string.Empty),
                 new("AuthenticationType", nameof(AuthenticationType.Oidc)),
