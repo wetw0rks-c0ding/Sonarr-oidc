@@ -25,6 +25,8 @@ namespace Sonarr.Http.Authentication
         // Fallback for tests / backwards compat when OIDC not configured; production should use IConfigFileProvider.OidcAuthority
         public const string FallbackIssuer = "https://auth.piracyhub.win/application/o/seekarr/";
 
+        public const string Issuer = FallbackIssuer;
+
         public const string RequiredAudienceSubstring = "seekarr";
 
         private static readonly Logger Logger = LogManager.GetLogger(nameof(AuthentikTokenValidationService));
