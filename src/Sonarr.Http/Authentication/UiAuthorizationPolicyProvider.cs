@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using NzbDrone.Core.Authentication;
 using NzbDrone.Core.Configuration;
+using Sonarr.Http.Authentication;
 
 namespace NzbDrone.Http.Authentication
 {
@@ -12,6 +13,14 @@ namespace NzbDrone.Http.Authentication
     {
         private const string PolicyName = "UI";
         private readonly IConfigFileProvider _config;
+
+        private static readonly (string Name, SonarrRole Role)[] PermissionPolicies =
+        {
+            ("UI.Read", SonarrRole.ReadOnly),
+            ("UI.Add", SonarrRole.AddSearch),
+            ("UI.Manage", SonarrRole.Manage),
+            ("UI.Admin", SonarrRole.Admin)
+        };
 
         public DefaultAuthorizationPolicyProvider FallbackPolicyProvider { get; }
 
@@ -45,6 +54,17 @@ namespace NzbDrone.Http.Authentication
                     .AddRequirements(new BypassableDenyAnonymousAuthorizationRequirement());
 
                 return Task.FromResult(policy.Build());
+            }
+
+            foreach (var (name, role) in PermissionPolicies)
+            {
+                if (policyName.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    var policy = new AuthorizationPolicyBuilder()
+                        .AddRequirements(new PermissionRequirement(role));
+
+                    return Task.FromResult(policy.Build());
+                }
             }
 
             return FallbackPolicyProvider.GetPolicyAsync(policyName);
