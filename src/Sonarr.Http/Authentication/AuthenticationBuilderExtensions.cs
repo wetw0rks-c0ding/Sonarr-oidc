@@ -134,6 +134,12 @@ namespace Sonarr.Http.Authentication
                 {
                     options.CorrelationCookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
                     options.NonceCookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+                    options.CorrelationCookie.HttpOnly = true;
+                    options.NonceCookie.HttpOnly = true;
+                    options.CorrelationCookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+                    options.NonceCookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+                    options.CorrelationCookie.Expiration = TimeSpan.FromMinutes(15);
+                    options.NonceCookie.Expiration = TimeSpan.FromMinutes(15);
 
                     if (configFileProvider.AuthenticationMethod != AuthenticationType.Oidc ||
                         !configFileProvider.IsOidcConfigured())
