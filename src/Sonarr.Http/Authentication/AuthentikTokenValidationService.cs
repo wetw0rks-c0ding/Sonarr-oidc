@@ -23,11 +23,11 @@ namespace Sonarr.Http.Authentication
     public class AuthentikTokenValidationService : IAuthentikTokenValidationService
     {
         // Fallback for tests / backwards compat when OIDC not configured; production should use IConfigFileProvider.OidcAuthority
-        public const string FallbackIssuer = "https://auth.piracyhub.win/application/o/seekarr/";
+        public const string FallbackIssuer = "https://auth.piracyhub.win/application/o/arrstack/";
 
         public const string Issuer = FallbackIssuer;
 
-        public const string RequiredAudienceSubstring = "seekarr";
+        public const string RequiredAudienceSubstring = "arrstack";
 
         private static readonly Logger Logger = LogManager.GetLogger(nameof(AuthentikTokenValidationService));
 
@@ -137,8 +137,15 @@ namespace Sonarr.Http.Authentication
 
                         // Fallback to exact audience list when clientId is configured; otherwise use substring for backwards compat in tests
                         AudienceValidator = expectedAudience != null
-                            ? (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal))
-                            : (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) && audience.Contains(RequiredAudienceSubstring)),
+                            ? (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal) ||
+                                                                                                                                 string.Equals(a, "arrstack", StringComparison.OrdinalIgnoreCase))
+                            : (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) &&
+                                                                                                                                 (audience.Contains("arrstack", StringComparison.OrdinalIgnoreCase) ||
+                                                                                                                                  audience.Contains(RequiredAudienceSubstring, StringComparison.OrdinalIgnoreCase) ||
+                                                                                                                                  audience.Contains("sonarr", StringComparison.OrdinalIgnoreCase) ||
+                                                                                                                                  audience.Contains("radarr", StringComparison.OrdinalIgnoreCase) ||
+                                                                                                                                  audience.Contains("lidarr", StringComparison.OrdinalIgnoreCase) ||
+                                                                                                                                  audience.Contains("prowlarr", StringComparison.OrdinalIgnoreCase))),
                         ValidateLifetime = true,
                         ClockSkew = TimeSpan.FromMinutes(2),
                         ValidateIssuerSigningKey = true,
