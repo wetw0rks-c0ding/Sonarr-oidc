@@ -39,6 +39,8 @@ namespace Sonarr.Http.Authentication
         public static AuthenticationBuilder AddAppAuthentication(this IServiceCollection services)
         {
             services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+            services.AddSingleton<ISonarrServiceTokenService, SonarrServiceTokenService>();
+            services.AddSingleton<IAuthentikTokenValidationService, AuthentikTokenValidationService>();
 
             return services.AddAuthentication(options =>
                 {
