@@ -45,7 +45,8 @@ public class GeneralSettingsController : SettingsController<GeneralSettingsResou
 
         SharedValidator.RuleFor(c => c.AllowedHosts)
                        .Must(h => AllowedHostsParser.Parse(h).Any())
-                       .When(c => c.AuthenticationRequired != AuthenticationRequiredType.Enabled)
+                       .When(c => c.AuthenticationRequired != AuthenticationRequiredType.Enabled &&
+                                  c.AuthenticationMethod != AuthenticationType.Oidc)
                        .WithMessage("Allowed Hosts is required when 'Authentication Required' is not 'Enabled'");
 
         SharedValidator.RuleFor(c => c.AllowedHosts)
