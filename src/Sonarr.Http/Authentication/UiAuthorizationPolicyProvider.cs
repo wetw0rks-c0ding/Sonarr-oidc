@@ -79,7 +79,15 @@ namespace NzbDrone.Http.Authentication
                         }
                     }
 
-                    if (!exists)
+                    // Only add the effective method's scheme when it names a registered
+                    // handler. AuthenticationMethod maps Basic/None to Forms, so in
+                    // practice this is always Forms, External, or Oidc — all registered.
+                    // An unregistered name (e.g. a future enum value) would make the
+                    // PolicyEvaluator throw instead of reaching the permission check.
+                    if (!exists &&
+                        (authenticationMethod.Equals("Forms", StringComparison.OrdinalIgnoreCase) ||
+                         authenticationMethod.Equals("External", StringComparison.OrdinalIgnoreCase) ||
+                         authenticationMethod.Equals(nameof(AuthenticationType.Oidc), StringComparison.OrdinalIgnoreCase)))
                     {
                         schemes.Add(authenticationMethod);
                     }
