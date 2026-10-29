@@ -151,6 +151,7 @@ namespace Sonarr.Http.Authentication
                     options.ResponseMode = "query";
                     options.UsePkce = true;
                     options.BackchannelHttpHandler = GetBackchannelHttpHandler(certificateValidationService);
+                    options.RefreshInterval = TimeSpan.FromHours(24);
                     options.Scope.Clear();
 
                     foreach (var scope in AuthenticationConfigurationExtensions.GetOidcScopes(configFileProvider.OidcScopes).Distinct(StringComparer.Ordinal))
@@ -202,6 +203,16 @@ namespace Sonarr.Http.Authentication
                     options.Events.OnRemoteFailure = context =>
                     {
                         Logger.Error(context.Failure, "OIDC authentication failed");
+
+                        // Force JWKS refresh on signature failure
+                        try
+                        {
+                            var oidcOptions = context.Options as OpenIdConnectOptions;
+                            oidcOptions?.ConfigurationManager?.RequestRefresh();
+                        }
+                        catch
+                        {
+                        }
 
                         context.HandleResponse();
                         context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=true");
