@@ -16,7 +16,7 @@ WORKDIR /src
 COPY global.json ./
 COPY src ./src
 RUN dotnet restore src/Sonarr.sln \
-    && dotnet publish src/NzbDrone.Console/Sonarr.Console.csproj \
+    && dotnet publish src/NzbDrone.Console/Sonarr.Console.csproj -f net10.0 \
         -c Release \
         -r linux-x64 \
         --self-contained false \
