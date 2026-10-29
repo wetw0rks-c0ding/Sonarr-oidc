@@ -11,7 +11,7 @@ RUN yarn install --frozen-lockfile --network-timeout 600000 --network-concurrenc
     && yarn build
 
 # ---------- Backend (mirrors CI: msbuild PublishAllRids, self-contained) ----------
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS backend
 WORKDIR /src
 COPY global.json ./
 COPY src ./src
