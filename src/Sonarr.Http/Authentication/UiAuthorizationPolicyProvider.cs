@@ -61,6 +61,8 @@ namespace NzbDrone.Http.Authentication
                 if (policyName.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
                     var policy = new AuthorizationPolicyBuilder()
+                        .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme, "API", "Forms")
+                        .RequireAuthenticatedUser()
                         .AddRequirements(new PermissionRequirement(role));
 
                     return Task.FromResult(policy.Build());

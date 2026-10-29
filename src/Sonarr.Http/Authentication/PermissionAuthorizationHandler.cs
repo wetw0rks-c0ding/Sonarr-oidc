@@ -15,6 +15,14 @@ namespace Sonarr.Http.Authentication
 
             if (!hasOidcSub)
             {
+                // Only the authenticated API-key / Forms path may bypass the role
+                // check. An unauthenticated principal must NOT succeed here; the
+                // policy's RequireAuthenticatedUser handles the 401.
+                if (context.User?.Identity?.IsAuthenticated != true)
+                {
+                    return Task.CompletedTask;
+                }
+
                 // Forms/ApiKey path: preserve existing bypass/succeed behavior.
                 var roleClaim = context.User?.FindFirst("role")?.Value
                     ?? context.User?.FindFirst("sonarr_role")?.Value;

@@ -55,6 +55,15 @@ namespace Sonarr.Http.Test.Authentication
         }
 
         [Test]
+        public void unauthenticated_principal_does_not_bypass()
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity());
+
+            IsAuthorized(principal, SonarrRole.Manage).Should().BeFalse();
+            IsAuthorized(principal, SonarrRole.ReadOnly).Should().BeFalse();
+        }
+
+        [Test]
         public void oidc_sub_without_role_denies()
         {
             var identity = new ClaimsIdentity(new[] { new Claim("oidc_sub", "subject-1") }, "Cookies");
