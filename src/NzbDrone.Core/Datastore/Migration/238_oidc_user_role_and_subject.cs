@@ -12,8 +12,6 @@ namespace NzbDrone.Core.Datastore.Migration
             Alter.Table("Users").AddColumn("OidcGroups").AsString().Nullable();
             Alter.Table("Users").AddColumn("Role").AsInt32().NotNullable().WithDefaultValue(3);
 
-            Update.Table("Users").Set(new { Role = 3 });
-
             Execute.Sql("CREATE UNIQUE INDEX \"IX_Users_OidcSubject\" ON \"Users\" (\"OidcSubject\") WHERE \"OidcSubject\" IS NOT NULL");
         }
     }

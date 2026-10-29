@@ -349,10 +349,6 @@ namespace Sonarr.Http.Authentication
             }
         }
 
-        public Task<IResult> Exchange(OidcExchangeRequest request) => ExchangeOidc(request);
-
-        public Task<IResult> OidcExchange(OidcExchangeRequest request) => ExchangeOidc(request);
-
         [HttpPost("api/auth/oidc/exchange")]
         [AllowAnonymous]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -410,7 +406,15 @@ namespace Sonarr.Http.Authentication
             }
 
             var userService = httpContext.RequestServices?.GetService(typeof(IUserService)) as IUserService;
-            userService?.UpsertOidcUser(validation.Subject, validation.Username, string.Join(",", validation.Groups), role.Value);
+            try
+            {
+                userService?.UpsertOidcUser(validation.Subject, validation.Username, string.Join(",", validation.Groups), role.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to upsert OIDC user");
+                return TypedResults.Json(new { message = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
 
             var tokenService = httpContext.RequestServices?.GetService(typeof(ISonarrServiceTokenService)) as ISonarrServiceTokenService;
             var sonarrToken = tokenService != null ? tokenService.MintToken(validation.Subject, role.Value) : null;
@@ -425,12 +429,6 @@ namespace Sonarr.Http.Authentication
             },
             statusCode: StatusCodes.Status200OK);
         }
-
-        public IResult Me() => GetMe();
-
-        public IResult CurrentUser() => GetMe();
-
-        public IResult GetCurrentUser() => GetMe();
 
         [HttpGet("api/auth/me")]
         [AllowAnonymous]

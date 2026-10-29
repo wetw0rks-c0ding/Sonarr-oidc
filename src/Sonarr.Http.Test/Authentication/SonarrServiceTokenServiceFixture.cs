@@ -116,7 +116,7 @@ namespace Sonarr.Http.Test.Authentication
 
             Assert.Throws<InvalidOperationException>(() =>
             {
-                GC.KeepAlive(Subject);
+                var unused = new SonarrServiceTokenService(Mocker.GetMock<IAppFolderInfo>().Object);
             });
         }
 
