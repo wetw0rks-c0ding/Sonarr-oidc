@@ -71,5 +71,75 @@ namespace Sonarr.Http.Test.Authentication
 
             IsAuthorized(principal, SonarrRole.Admin).Should().BeTrue();
         }
+
+        [Test]
+        public void readonly_succeeds_for_readonly_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("ReadOnly"), SonarrRole.ReadOnly).Should().BeTrue();
+        }
+
+        [Test]
+        public void readonly_fails_for_addsearch_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("ReadOnly"), SonarrRole.AddSearch).Should().BeFalse();
+        }
+
+        [Test]
+        public void addsearch_succeeds_for_readonly_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("AddSearch"), SonarrRole.ReadOnly).Should().BeTrue();
+        }
+
+        [Test]
+        public void addsearch_succeeds_for_addsearch_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("AddSearch"), SonarrRole.AddSearch).Should().BeTrue();
+        }
+
+        [Test]
+        public void addsearch_fails_for_manage_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("AddSearch"), SonarrRole.Manage).Should().BeFalse();
+        }
+
+        [Test]
+        public void manage_succeeds_for_manage_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("Manage"), SonarrRole.Manage).Should().BeTrue();
+        }
+
+        [Test]
+        public void manage_fails_for_admin_requirement()
+        {
+            IsAuthorized(PrincipalWithRole("Manage"), SonarrRole.Admin).Should().BeFalse();
+        }
+
+        [Test]
+        public void admin_succeeds_for_all_requirements()
+        {
+            IsAuthorized(PrincipalWithRole("Admin"), SonarrRole.ReadOnly).Should().BeTrue();
+            IsAuthorized(PrincipalWithRole("Admin"), SonarrRole.AddSearch).Should().BeTrue();
+            IsAuthorized(PrincipalWithRole("Admin"), SonarrRole.Manage).Should().BeTrue();
+            IsAuthorized(PrincipalWithRole("Admin"), SonarrRole.Admin).Should().BeTrue();
+        }
+
+        [Test]
+        public void api_key_without_role_or_oidc_sub_bypasses_all_requirements()
+        {
+            var identity = new ClaimsIdentity(new[] { new Claim("ApiKey", "true") }, "API Key");
+            var principal = new ClaimsPrincipal(identity);
+
+            IsAuthorized(principal, SonarrRole.ReadOnly).Should().BeTrue();
+            IsAuthorized(principal, SonarrRole.AddSearch).Should().BeTrue();
+            IsAuthorized(principal, SonarrRole.Manage).Should().BeTrue();
+            IsAuthorized(principal, SonarrRole.Admin).Should().BeTrue();
+        }
+
+        [Test]
+        public void role_claim_is_case_insensitive()
+        {
+            IsAuthorized(PrincipalWithRole("admin"), SonarrRole.Admin).Should().BeTrue();
+            IsAuthorized(PrincipalWithRole("readonly"), SonarrRole.ReadOnly).Should().BeTrue();
+        }
     }
 }

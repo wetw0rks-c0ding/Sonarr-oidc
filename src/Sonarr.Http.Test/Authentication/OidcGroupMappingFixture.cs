@@ -74,5 +74,24 @@ namespace Sonarr.Http.Test.Authentication
         {
             Assert.That(OidcGroupMapping.GroupToTier.Count, Is.EqualTo(5));
         }
+
+        [Test]
+        public void should_return_null_for_pirates_plus_unknown()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "pirates", "unknown" }), Is.Null);
+        }
+
+        [Test]
+        public void should_pick_highest_tier_with_mixed_unknown_groups()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "foo", "family", "bar", "maintenance" }), Is.EqualTo(SonarrRole.Manage));
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies", "baz", "authentik Admins" }), Is.EqualTo(SonarrRole.Admin));
+        }
+
+        [Test]
+        public void should_be_case_insensitive_for_all_tiers()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies", "FAMILY", "Maintenance", "AUTHENTIK ADMINS" }), Is.EqualTo(SonarrRole.Admin));
+        }
     }
 }
