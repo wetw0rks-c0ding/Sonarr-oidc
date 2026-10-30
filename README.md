@@ -1,5 +1,7 @@
 # <img width="24px" src="./Logo/256.png" alt="Sonarr"></img> Sonarr
 
+> **Fork note — OIDC build for Seekarr:** this fork adds Authentik OIDC group-based authorization and Seekarr mobile app-auth (`POST /api/auth/oidc/exchange`, `GET /api/auth/me`) on top of upstream. Group tiers: `pirates` blocked (403), `homies` ReadOnly, `family` AddSearch, `maintenance` Manage, `authentik Admins` Admin. Unified provider `https://auth.piracyhub.win/application/o/arrstack/` (per-service `.../o/sonarr/` etc. also accepted). Branch: `feature/oidc-app-auth`. Prebuilt image: `ghcr.io/wetw0rks-c0ding/sonarr-oidc:feature-oidc-app-auth` (port 8989). Details in `docs/project-logs/`. These are fork-only patches, not intended for upstream.
+
 [![Translated](https://translate.servarr.com/widget/servarr/sonarr/svg-badge.svg)](https://translate.servarr.com/engage/servarr/)
 [![Backers on Open Collective](https://opencollective.com/Sonarr/backers/badge.svg)](#backers)
 [![Sponsors on Open Collective](https://opencollective.com/Sonarr/sponsors/badge.svg)](#sponsors)
