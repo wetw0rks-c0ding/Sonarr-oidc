@@ -33,6 +33,9 @@ COPY --from=frontend /src/_output/UI /app/publish/UI
 
 # ---------- Runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+LABEL org.opencontainers.image.title="sonarr-oidc" \
+      org.opencontainers.image.description="Sonarr (Servarr fork) with Authentik OIDC group-based authorization and Seekarr mobile app-auth" \
+      org.opencontainers.image.source="https://github.com/wetw0rks-c0ding/Sonarr-oidc"
 ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     TZ=Etc/UTC
