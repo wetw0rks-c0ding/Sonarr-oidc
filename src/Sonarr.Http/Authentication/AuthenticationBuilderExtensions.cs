@@ -291,11 +291,13 @@ namespace Sonarr.Http.Authentication
                             try
                             {
                                 var uri = new Uri(redirectUri);
+                                #pragma warning disable CA1845 // Span-based concatenation not available for this legacy pattern in net10.0 build context
                                 if (!uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
                                     !System.Net.IPAddress.TryParse(uri.Host, out _))
                                 {
                                     context.ProtocolMessage.RedirectUri = "https://" + redirectUri.Substring(7);
                                 }
+                                #pragma warning restore CA1845
                             }
                             catch (UriFormatException ex)
                             {
@@ -351,7 +353,7 @@ namespace Sonarr.Http.Authentication
 
                         var groups = GetGroups(context.Principal, groupsClaimName).ToList();
 
-                        var resolvedRole = OidcGroupMapping.Resolve(groups);
+                        var resolvedRole = OidcGroupMapping.Resolve(groups, configFileProvider.OidcRoleMappings);
 
                         if (resolvedRole == null)
                         {

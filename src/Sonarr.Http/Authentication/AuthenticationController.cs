@@ -276,7 +276,7 @@ namespace Sonarr.Http.Authentication
                 return TypedResults.Json(new { message = "invalid_token" }, statusCode: StatusCodes.Status401Unauthorized);
             }
 
-            var role = OidcGroupMapping.Resolve(validation.Groups);
+            var role = OidcGroupMapping.Resolve(validation.Groups, _configFileProvider.OidcRoleMappings);
             if (role == null)
             {
                 return TypedResults.Json(new { message = "insufficient_group" }, statusCode: StatusCodes.Status403Forbidden);
