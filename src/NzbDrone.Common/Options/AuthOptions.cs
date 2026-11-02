@@ -16,4 +16,5 @@ public class AuthOptions
     public string OidcUserIdentifier { get; set; }
     public string OidcScopes { get; set; }
     public string OidcGroupsClaim { get; set; }
+    public string OidcRoleMappings { get; set; }
 }

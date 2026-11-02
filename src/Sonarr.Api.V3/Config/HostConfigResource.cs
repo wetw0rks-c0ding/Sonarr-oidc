@@ -28,6 +28,7 @@ namespace Sonarr.Api.V3.Config
         public string OidcUserIdentifier { get; set; }
         public string OidcScopes { get; set; }
         public string OidcGroupsClaim { get; set; }
+        public string OidcRoleMappings { get; set; }
         public string LogLevel { get; set; }
         public int LogSizeLimit { get; set; }
         public string ConsoleLogLevel { get; set; }
@@ -79,6 +80,7 @@ namespace Sonarr.Api.V3.Config
                 OidcUserIdentifier = model.OidcUserIdentifier,
                 OidcScopes = model.OidcScopes,
                 OidcGroupsClaim = model.OidcGroupsClaim,
+                OidcRoleMappings = model.OidcRoleMappings,
                 LogLevel = model.LogLevel,
                 LogSizeLimit = model.LogSizeLimit,
                 ConsoleLogLevel = model.ConsoleLogLevel,

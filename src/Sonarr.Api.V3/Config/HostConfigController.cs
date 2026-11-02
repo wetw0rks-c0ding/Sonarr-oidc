@@ -108,6 +108,12 @@ namespace Sonarr.Api.V3.Config
                 .When(c => c.AuthenticationMethod == AuthenticationType.Oidc)
                 .WithName("OIDC Scopes");
 
+            SharedValidator.RuleFor(c => c.OidcRoleMappings)
+                .Cascade(CascadeMode.Stop)
+                .Must(c => { if (string.IsNullOrWhiteSpace(c)) return true; var parts = c.Split(';'); foreach (var p in parts) { if (!p.Contains('=') || string.IsNullOrWhiteSpace(p.Split('=').First()) || string.IsNullOrWhiteSpace(p.Split('=').Skip(1).FirstOrDefault())) return false; } return true; })
+                .When(c => c.AuthenticationMethod == AuthenticationType.Oidc)
+                .WithName("OIDC Role Mappings");
+
             SharedValidator.RuleFor(c => c.SslPort).ValidPort().When(c => c.EnableSsl);
             SharedValidator.RuleFor(c => c.SslPort).NotEqual(c => c.Port).When(c => c.EnableSsl);
 
