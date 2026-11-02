@@ -93,5 +93,47 @@ namespace Sonarr.Http.Test.Authentication
         {
             Assert.That(OidcGroupMapping.Resolve(new[] { "homies", "FAMILY", "Maintenance", "AUTHENTIK ADMINS" }), Is.EqualTo(SonarrRole.Admin));
         }
+
+        [Test]
+        public void should_resolve_exact_match_with_mappings()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies" }, "homies=ReadOnly"), Is.EqualTo(SonarrRole.ReadOnly));
+            Assert.That(OidcGroupMapping.Resolve(new[] { "family" }, "family=AddSearch"), Is.EqualTo(SonarrRole.AddSearch));
+        }
+
+        [Test]
+        public void should_be_case_insensitive_for_group_and_role_with_mappings()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "HOMIES" }, "homies=readonly"), Is.EqualTo(SonarrRole.ReadOnly));
+            Assert.That(OidcGroupMapping.Resolve(new[] { "Homies" }, "HOMIES=READONLY"), Is.EqualTo(SonarrRole.ReadOnly));
+        }
+
+        [Test]
+        public void should_pick_highest_role_with_mappings()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies", "maintenance" }, "homies=ReadOnly;maintenance=Manage"), Is.EqualTo(SonarrRole.Manage));
+        }
+
+        [Test]
+        public void should_return_null_for_unmapped_group_with_mappings()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "foo" }, "homies=ReadOnly"), Is.Null);
+        }
+
+        [Test]
+        public void should_return_null_for_empty_mappings()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies" }, ""), Is.Null);
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies" }, "   "), Is.Null);
+        }
+
+        [Test]
+        public void should_ignore_malformed_pairs()
+        {
+            Assert.That(OidcGroupMapping.Resolve(new[] { "family" }, "noequals;family=AddSearch"), Is.EqualTo(SonarrRole.AddSearch));
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies" }, "homies=;family=AddSearch"), Is.Null);
+            Assert.That(OidcGroupMapping.Resolve(new[] { "family" }, "=ReadOnly;family=AddSearch"), Is.EqualTo(SonarrRole.AddSearch));
+            Assert.That(OidcGroupMapping.Resolve(new[] { "homies" }, "homies=SuperUser"), Is.Null);
+        }
     }
 }
