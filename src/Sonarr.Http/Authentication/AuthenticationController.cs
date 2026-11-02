@@ -264,13 +264,13 @@ namespace Sonarr.Http.Authentication
                 return TypedResults.Json(new { message = "subject_token is required" }, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var authentik = httpContext.RequestServices?.GetService(typeof(IAuthentikTokenValidationService)) as IAuthentikTokenValidationService;
-            if (authentik == null)
+            var oidc = httpContext.RequestServices?.GetService(typeof(IOidcTokenValidationService)) as IOidcTokenValidationService;
+            if (oidc == null)
             {
                 return TypedResults.Json(new { message = "service_unavailable" }, statusCode: StatusCodes.Status500InternalServerError);
             }
 
-            var validation = await authentik.ValidateAsync(subjectToken);
+            var validation = await oidc.ValidateAsync(subjectToken);
             if (!validation.Success)
             {
                 return TypedResults.Json(new { message = "invalid_token" }, statusCode: StatusCodes.Status401Unauthorized);

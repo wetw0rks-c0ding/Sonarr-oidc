@@ -42,7 +42,7 @@ namespace Sonarr.Http.Authentication
         {
             services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
             services.AddSingleton<ISonarrServiceTokenService, SonarrServiceTokenService>();
-            services.AddSingleton<IAuthentikTokenValidationService, AuthentikTokenValidationService>();
+            services.AddSingleton<IOidcTokenValidationService, OidcTokenValidationService>();
 
             var builder = services.AddAuthentication(options =>
                 {

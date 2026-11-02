@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -19,9 +20,9 @@ using Sonarr.Http.Authentication;
 namespace Sonarr.Http.Test.Authentication
 {
     [TestFixture]
-    public class AuthentikTokenValidationServiceFixture
+    public class OidcTokenValidationServiceFixture
     {
-        private const string Issuer = AuthentikTokenValidationService.Issuer;
+        private const string ValidIssuer = "https://auth.piracyhub.win/application/o/arrstack/";
 
         private RSA _rsa;
         private RsaSecurityKey _signingKey;
@@ -36,7 +37,7 @@ namespace Sonarr.Http.Test.Authentication
             _jsonWebKey = JsonWebKeyConverter.ConvertFromRSASecurityKey(_signingKey);
             _jsonWebKey.Kid = "test-kid";
 
-            _configuration = new OpenIdConnectConfiguration { Issuer = Issuer };
+            _configuration = new OpenIdConnectConfiguration { Issuer = ValidIssuer };
             _configuration.SigningKeys.Add(_signingKey);
             _configuration.JsonWebKeySet = new JsonWebKeySet();
             _configuration.JsonWebKeySet.Keys.Add(_jsonWebKey);
@@ -55,7 +56,7 @@ namespace Sonarr.Http.Test.Authentication
             string subject = "user-123",
             string username = "alice",
             IEnumerable<string> groups = null,
-            string issuer = Issuer,
+            string issuer = ValidIssuer,
             string audience = "seekarr-app",
             int notBeforeMinutes = -1,
             int expiresMinutes = 5,
@@ -101,7 +102,7 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(groups: new[] { "homies", "family" });
 
-            var service = new AuthentikTokenValidationService(CreateManager(_configuration));
+            var service = new OidcTokenValidationService(CreateManager(_configuration));
 
             var result = await service.ValidateAsync(token);
 
@@ -117,7 +118,7 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(notBeforeMinutes: -20, expiresMinutes: -10);
 
-            var service = new AuthentikTokenValidationService(CreateManager(_configuration));
+            var service = new OidcTokenValidationService(CreateManager(_configuration));
 
             var result = await service.ValidateAsync(token);
 
@@ -130,7 +131,7 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(issuer: "https://evil.example/");
 
-            var service = new AuthentikTokenValidationService(CreateManager(_configuration));
+            var service = new OidcTokenValidationService(CreateManager(_configuration));
 
             var result = await service.ValidateAsync(token);
 
@@ -143,7 +144,7 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(audience: "other-app");
 
-            var service = new AuthentikTokenValidationService(CreateManager(_configuration));
+            var service = new OidcTokenValidationService(CreateManager(_configuration));
 
             var result = await service.ValidateAsync(token);
 
@@ -156,7 +157,7 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(subject: null);
 
-            var service = new AuthentikTokenValidationService(CreateManager(_configuration));
+            var service = new OidcTokenValidationService(CreateManager(_configuration));
 
             var result = await service.ValidateAsync(token);
 
@@ -172,7 +173,7 @@ namespace Sonarr.Http.Test.Authentication
             var refreshedJwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(refreshedKey);
             refreshedJwk.Kid = "refreshed-kid";
 
-            var refreshedConfiguration = new OpenIdConnectConfiguration { Issuer = Issuer };
+            var refreshedConfiguration = new OpenIdConnectConfiguration { Issuer = ValidIssuer };
             refreshedConfiguration.SigningKeys.Add(refreshedKey);
             refreshedConfiguration.JsonWebKeySet = new JsonWebKeySet();
             refreshedConfiguration.JsonWebKeySet.Keys.Add(refreshedJwk);
@@ -184,7 +185,7 @@ namespace Sonarr.Http.Test.Authentication
 
             var token = CreateToken(signingKey: refreshedKey);
 
-            var service = new AuthentikTokenValidationService(mock.Object);
+            var service = new OidcTokenValidationService(mock.Object);
 
             var result = await service.ValidateAsync(token);
 

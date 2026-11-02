@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -13,78 +14,32 @@ using NLog;
 
 namespace Sonarr.Http.Authentication
 {
-    public record AuthentikValidationResult(bool Success, string FailureReason, string Subject, string Username, List<string> Groups);
+    public record OidcValidationResult(bool Success, string FailureReason, string Subject, string Username, List<string> Groups);
 
-    public interface IAuthentikTokenValidationService
+    public interface IOidcTokenValidationService
     {
-        Task<AuthentikValidationResult> ValidateAsync(string token);
+        Task<OidcValidationResult> ValidateAsync(string token);
     }
 
-    public class AuthentikTokenValidationService : IAuthentikTokenValidationService
+    public class OidcTokenValidationService : IOidcTokenValidationService
     {
-        // Fallback for tests / backwards compat when OIDC not configured; production should use IConfigFileProvider.OidcAuthority
-        public const string FallbackIssuer = "https://auth.piracyhub.win/application/o/arrstack/";
+        private static readonly Logger Logger = LogManager.GetLogger(nameof(OidcTokenValidationService));
 
-        public const string Issuer = FallbackIssuer;
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
 
-        public const string RequiredAudienceSubstring = "arrstack";
-
-        private static readonly Logger Logger = LogManager.GetLogger(nameof(AuthentikTokenValidationService));
-
-        private readonly IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
-        private readonly NzbDrone.Core.Configuration.IConfigFileProvider _configFileProvider;
-
-        public AuthentikTokenValidationService(IConfigurationManager<OpenIdConnectConfiguration> configurationManager = null, NzbDrone.Core.Configuration.IConfigFileProvider configFileProvider = null)
+        public OidcTokenValidationService(IOptionsMonitor<NzbDrone.Core.Configuration.IConfigFileProvider> configProvider = null)
         {
-            _configFileProvider = configFileProvider;
-
-            var issuer = GetIssuer();
-
-            if (configurationManager == null)
-            {
-                var manager = new ConfigurationManager<OpenIdConnectConfiguration>(
-                    issuer + ".well-known/openid-configuration",
-                    new OpenIdConnectConfigurationRetriever())
-                {
-                    AutomaticRefreshInterval = TimeSpan.FromHours(24),
-                    RefreshInterval = TimeSpan.FromHours(24),
-                };
-
-                _configurationManager = manager;
-            }
-            else
-            {
-                _configurationManager = configurationManager;
-            }
+            _configFileProvider = configProvider?.CurrentValue;
         }
 
-        private string GetIssuer()
-        {
-            var authority = _configFileProvider?.OidcAuthority;
-            if (!string.IsNullOrWhiteSpace(authority))
-            {
-                return authority.TrimEnd('/') + "/";
-            }
+        // Lazily initialized on first ValidateAsync call
+        private NzbDrone.Core.Configuration.IConfigFileProvider _configFileProvider;
 
-            return FallbackIssuer;
-        }
-
-        private string GetExpectedAudience()
-        {
-            var clientId = _configFileProvider?.OidcClientId;
-            if (!string.IsNullOrWhiteSpace(clientId))
-            {
-                return clientId.Trim();
-            }
-
-            return null;
-        }
-
-        public async Task<AuthentikValidationResult> ValidateAsync(string token)
+        public async Task<OidcValidationResult> ValidateAsync(string token)
         {
             if (string.IsNullOrWhiteSpace(token))
             {
-                return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
+                return new OidcValidationResult(false, "invalid_token", null, null, new List<string>());
             }
 
             var cleanedToken = token.Trim();
@@ -93,113 +48,112 @@ namespace Sonarr.Http.Authentication
                 cleanedToken = cleanedToken.Substring(7).Trim();
             }
 
-            var handler = new JwtSecurityTokenHandler();
-            handler.InboundClaimTypeMap.Clear();
+            // Lazy-init ConfigurationManager on first call; fail closed if OIDC not configured
+            if (_configurationManager == null)
+            {
+                var authority = _configFileProvider?.OidcAuthority;
 
-            for (var attempt = 0; attempt < 2; attempt++)
+                // Fail closed: no configuration, return invalid_token immediately
+                if (string.IsNullOrWhiteSpace(authority))
+                {
+                    Logger.Debug("OIDC token validation skipped: Authority not configured");
+                    return new OidcValidationResult(false, "invalid_token", null, null, new List<string>());
+                }
+
+                var manager = new ConfigurationManager<OpenIdConnectConfiguration>(
+                    authority.TrimEnd('/') + "/.well-known/openid-configuration",
+                    new OpenIdConnectConfigurationRetriever())
+                {
+                    AutomaticRefreshInterval = TimeSpan.FromHours(24),
+                    RefreshInterval = TimeSpan.FromHours(24),
+                };
+
+                _configurationManager = manager;
+            }
+
+            var configuration = await _configurationManager.GetConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+
+            if (configuration == null)
+            {
+                Logger.Debug("OIDC token validation skipped: discovery returned null");
+                return new OidcValidationResult(false, "invalid_token", null, null, new List<string>());
+            }
+
+            var signingKeys = new List<SecurityKey>();
+            if (configuration.SigningKeys != null)
+            {
+                signingKeys.AddRange(configuration.SigningKeys);
+            }
+
+            if (configuration.JsonWebKeySet != null)
             {
                 try
                 {
-                    var configuration = await _configurationManager.GetConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
-
-                    var signingKeys = new List<SecurityKey>();
-                    if (configuration != null && configuration.SigningKeys != null)
-                    {
-                        signingKeys.AddRange(configuration.SigningKeys);
-                    }
-
-                    if (configuration != null && configuration.JsonWebKeySet != null)
-                    {
-                        try
-                        {
-                            signingKeys.AddRange(configuration.JsonWebKeySet.GetSigningKeys());
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    var issuer = GetIssuer();
-                    var expectedAudience = GetExpectedAudience();
-
-                    // If OIDC is not configured, fail closed
-                    if (_configFileProvider != null && string.IsNullOrWhiteSpace(_configFileProvider.OidcAuthority))
-                    {
-                        return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
-                    }
-
-                    var parameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidIssuer = issuer,
-                        ValidateAudience = true,
-                        ValidAudience = expectedAudience,
-
-                        // Fallback to exact audience list when clientId is configured; otherwise use substring for backwards compat in tests
-                        AudienceValidator = expectedAudience != null
-                            ? (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal) ||
-                                                                                                                                 string.Equals(a, "arrstack", StringComparison.OrdinalIgnoreCase))
-                            : (audiences, securityToken, validationParameters) => audiences != null && audiences.Any(audience => !string.IsNullOrWhiteSpace(audience) &&
-                                                                                                                                 (audience.Contains("arrstack", StringComparison.OrdinalIgnoreCase) ||
-                                                                                                                                  audience.Contains(RequiredAudienceSubstring, StringComparison.OrdinalIgnoreCase) ||
-                                                                                                                                  audience.Contains("sonarr", StringComparison.OrdinalIgnoreCase) ||
-                                                                                                                                  audience.Contains("radarr", StringComparison.OrdinalIgnoreCase) ||
-                                                                                                                                  audience.Contains("lidarr", StringComparison.OrdinalIgnoreCase) ||
-                                                                                                                                  audience.Contains("prowlarr", StringComparison.OrdinalIgnoreCase))),
-                        ValidateLifetime = true,
-                        ClockSkew = TimeSpan.FromMinutes(2),
-                        ValidateIssuerSigningKey = true,
-                        IssuerSigningKeys = signingKeys,
-                    };
-
-                    var validationResult = await handler.ValidateTokenAsync(cleanedToken, parameters).ConfigureAwait(false);
-                    if (!validationResult.IsValid)
-                    {
-                        throw validationResult.Exception ?? new SecurityTokenException("Invalid token");
-                    }
-
-                    var principal = new System.Security.Claims.ClaimsPrincipal(validationResult.ClaimsIdentity);
-
-                    var subject = principal.FindFirst("sub")?.Value;
-                    if (string.IsNullOrWhiteSpace(subject))
-                    {
-                        return new AuthentikValidationResult(false, "missing_subject", null, null, new List<string>());
-                    }
-
-                    var username = principal.FindFirst("preferred_username")?.Value
-                        ?? principal.FindFirst("email")?.Value
-                        ?? subject;
-
-                    var groups = AuthenticationBuilderExtensions.GetGroups(principal, "groups").ToList();
-
-                    return new AuthentikValidationResult(true, null, subject, username, groups);
-                }
-                catch (SecurityTokenSignatureKeyNotFoundException)
-                {
-                    if (attempt == 0)
-                    {
-                        try
-                        {
-                            _configurationManager.RequestRefresh();
-                        }
-                        catch
-                        {
-                        }
-
-                        continue;
-                    }
-
-                    Logger.Warn("Authentik token validation failed: signature key not found");
-                    return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
+                    signingKeys.AddRange(configuration.JsonWebKeySet.GetSigningKeys());
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn(ex, "Authentik token validation failed");
-                    return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
+                    Logger.Debug(ex, "Failed to extract signing keys from JWKS");
                 }
             }
 
-            return new AuthentikValidationResult(false, "invalid_token", null, null, new List<string>());
+            if (!signingKeys.Any())
+            {
+                Logger.Debug("OIDC token validation skipped: no signing keys available");
+                return new OidcValidationResult(false, "invalid_token", null, null, new List<string>());
+            }
+
+            var issuer = configuration.Issuer;
+            var expectedAudience = _configFileProvider?.OidcClientId?.Trim();
+
+            // Audience rule: clientId set → exact match only; unset/empty → fail closed (no validation attempted)
+            OidcValidationResult result;
+
+            if (!string.IsNullOrWhiteSpace(expectedAudience))
+            {
+                var parameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = issuer,
+                    ValidateAudience = true,
+                    ValidAudience = expectedAudience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(2),
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKeys = signingKeys,
+                    AudienceValidator = (audiences, securityToken, validationParameters) =>
+                        audiences != null && audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.Ordinal)),
+                };
+
+                var validationResult = await handler.ValidateTokenAsync(cleanedToken, parameters).ConfigureAwait(false);
+                if (!validationResult.IsValid)
+                {
+                    throw validationResult.Exception ?? new SecurityTokenException("Invalid token");
+                }
+
+                var principal = new System.Security.Claims.ClaimsPrincipal(validationResult.ClaimsIdentity);
+                var subject = principal.FindFirst("sub")?.Value;
+                if (string.IsNullOrWhiteSpace(subject))
+                {
+                    return new OidcValidationResult(false, "missing_subject", null, null, new List<string>());
+                }
+
+                var username = principal.FindFirst("preferred_username")?.Value
+                    ?? principal.FindFirst("email")?.Value
+                    ?? subject;
+
+                result = new OidcValidationResult(true, null, subject, username, AuthenticationBuilderExtensions.GetGroups(principal, "groups").ToList());
+            }
+            else
+            {
+                // No clientId configured → fail closed without attempting audience validation
+                Logger.Debug("OIDC token validation skipped: no client ID configured");
+                result = new OidcValidationResult(false, "invalid_token", null, null, new List<string>());
+            }
+
+            return result;
         }
+
+        private JwtSecurityTokenHandler handler { get; } = new JwtSecurityTokenHandler();
     }
 }
