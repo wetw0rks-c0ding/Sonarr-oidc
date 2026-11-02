@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Threading;
@@ -82,46 +81,13 @@ namespace Sonarr.Http.Test.Authentication
             return mock.Object;
         }
 
-        private static void SetConfigurationManager(
-            OidcTokenValidationService service,
-            IConfigurationManager<OpenIdConnectConfiguration> configurationManager)
-        {
-            // OidcTokenValidationService's public constructor accepts either an
-            // IConfigurationManager or an IOptionsMonitor. Production DI passes the options
-            // monitor and lazily builds the network-backed manager; tests inject the manager
-            // so discovery never hits the network while OidcClientId still comes from config.
-            var field = typeof(OidcTokenValidationService)
-                .GetField("_configurationManager", BindingFlags.Instance | BindingFlags.NonPublic);
-
-            Assert.That(field, Is.Not.Null, "OidcTokenValidationService._configurationManager field not found");
-            field.SetValue(service, configurationManager);
-        }
-
-        private static void DisableInboundClaimMapping(OidcTokenValidationService service)
-        {
-            // JwtSecurityTokenHandler maps "sub" to ClaimTypes.NameIdentifier by default while
-            // OidcTokenValidationService looks up the raw "sub" claim. Use a non-mapping handler
-            // so the fixture exercises issuer/audience/lifetime/claim validation as intended.
-            var field = typeof(OidcTokenValidationService)
-                .GetField("<handler>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
-
-            Assert.That(field, Is.Not.Null, "OidcTokenValidationService.handler backing field not found");
-            field.SetValue(service, new JwtSecurityTokenHandler { MapInboundClaims = false });
-        }
-
         private OidcTokenValidationService CreateService(
             IConfigurationManager<OpenIdConnectConfiguration> configurationManager = null)
         {
-            var service = new OidcTokenValidationService(null, _configMonitor.Object);
-
-            DisableInboundClaimMapping(service);
-
-            if (configurationManager != null)
-            {
-                SetConfigurationManager(service, configurationManager);
-            }
-
-            return service;
+            // Production DI passes only the options monitor and lazily builds the network-backed
+            // manager; tests pass the manager too so discovery never hits the network while
+            // OidcClientId still comes from config. No reflection is used.
+            return new OidcTokenValidationService(configurationManager, _configMonitor.Object);
         }
 
         private string CreateToken(
@@ -185,11 +151,10 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(notBeforeMinutes: -20, expiresMinutes: -10);
 
-            // The service surfaces signature/lifetime/issuer/audience failures as a
-            // SecurityTokenException rather than an OidcValidationResult.
-            Assert.That(
-                () => CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult(),
-                Throws.InstanceOf<SecurityTokenException>());
+            var result = CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult();
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.FailureReason, Is.EqualTo("invalid_token"));
         }
 
         [Test]
@@ -197,9 +162,10 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(issuer: "https://evil.example.com");
 
-            Assert.That(
-                () => CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult(),
-                Throws.InstanceOf<SecurityTokenException>());
+            var result = CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult();
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.FailureReason, Is.EqualTo("invalid_token"));
         }
 
         [Test]
@@ -207,9 +173,10 @@ namespace Sonarr.Http.Test.Authentication
         {
             var token = CreateToken(audience: "wrong-client-id");
 
-            Assert.That(
-                () => CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult(),
-                Throws.InstanceOf<SecurityTokenException>());
+            var result = CreateService(CreateManager(_configuration)).ValidateAsync(token).GetAwaiter().GetResult();
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.FailureReason, Is.EqualTo("invalid_token"));
         }
 
         [Test]
@@ -277,18 +244,27 @@ namespace Sonarr.Http.Test.Authentication
             var service = CreateService(manager.Object);
             var token = CreateToken(signingKey: rotatedKey);
 
-            // Unknown kid is not retried within a single validation; the token is rejected
-            // against the stale key set.
-            Assert.That(
-                () => service.ValidateAsync(token).GetAwaiter().GetResult(),
-                Throws.InstanceOf<SecurityTokenException>());
-
-            // Once discovery returns the rotated key set, the same token validates.
+            // The unknown kid triggers an in-call JWKS refresh and one retry against the
+            // rotated key set, so the first exchange after rotation succeeds.
             var result = service.ValidateAsync(token).GetAwaiter().GetResult();
 
-            Assert.That(result.Success, Is.True);
+            Assert.That(result.Success, Is.True, result.FailureReason);
             Assert.That(result.Subject, Is.EqualTo("subject-1"));
+            manager.Verify(m => m.RequestRefresh(), Times.Once);
             manager.Verify(m => m.GetConfigurationAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+            // If the refreshed key set is still stale the retry must yield a failure result,
+            // never a thrown SecurityTokenException (C2).
+            var staleManager = new Mock<IConfigurationManager<OpenIdConnectConfiguration>>();
+            staleManager.SetupSequence(m => m.GetConfigurationAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_configuration)
+                .ReturnsAsync(_configuration);
+
+            var staleResult = CreateService(staleManager.Object).ValidateAsync(token).GetAwaiter().GetResult();
+
+            Assert.That(staleResult.Success, Is.False);
+            Assert.That(staleResult.FailureReason, Is.EqualTo("invalid_token"));
+            staleManager.Verify(m => m.RequestRefresh(), Times.Once);
         }
     }
 }
