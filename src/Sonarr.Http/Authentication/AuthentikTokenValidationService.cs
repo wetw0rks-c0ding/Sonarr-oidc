@@ -27,12 +27,20 @@ namespace Sonarr.Http.Authentication
 
         private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager;
 
-        public OidcTokenValidationService(IOptionsMonitor<NzbDrone.Core.Configuration.IConfigFileProvider> configProvider = null)
+        // Accepts either a pre-wired ConfigurationManager or an options monitor for config-driven initialization
+        public OidcTokenValidationService(IConfigurationManager<OpenIdConnectConfiguration> configurationManager = null, IOptionsMonitor<NzbDrone.Core.Configuration.IConfigFileProvider> configProvider = null)
         {
-            _configFileProvider = configProvider?.CurrentValue;
+            if (configurationManager != null)
+            {
+                _configurationManager = configurationManager;
+            }
+            else if (configProvider != null)
+            {
+                _configFileProvider = configProvider?.CurrentValue;
+            }
         }
 
-        // Lazily initialized on first ValidateAsync call
+        // Lazily initialized on first ValidateAsync call when using options monitor pattern
         private NzbDrone.Core.Configuration.IConfigFileProvider _configFileProvider;
 
         public async Task<OidcValidationResult> ValidateAsync(string token)
