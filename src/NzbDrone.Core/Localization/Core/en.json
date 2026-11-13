@@ -232,6 +232,8 @@
   "CalendarOpenEpisodeDetails": "Open details for {series}, {episode}, {title}, airing {airDate}. {status}",
   "CalendarOptions": "Calendar Options",
   "Cancel": "Cancel",
+  "CancelAll": "Cancel All",
+  "CancelAllQueuedTasksMessage": "Are you sure you want to cancel all queued tasks? Only queued tasks will be cancelled.",
   "CancelPendingTask": "Are you sure you want to cancel this pending task?",
   "CancelTaskWithName": "Cancel {name}",
   "Capitalization": "Capitalization",
