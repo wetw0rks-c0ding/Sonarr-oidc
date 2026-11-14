@@ -353,44 +353,26 @@ namespace Sonarr.Http.Authentication
 
                         var groups = GetGroups(context.Principal, groupsClaimName).ToList();
 
-                        var resolvedRole = OidcGroupMapping.Resolve(groups, configFileProvider.OidcRoleMappings);
+                        var configuredUser = configFileProvider.OidcUserIdentifier;
+                        var tokenSubject = context.Principal?.FindFirst("sub")?.Value;
+                        var preferredUsername = context.Principal?.FindFirst("preferred_username")?.Value;
+                        var tokenEmail = context.Principal?.FindFirst("email")?.Value;
+
+                        var resolvedRole = ResolveOidcRole(groups, configFileProvider.OidcRoleMappings, configuredUser, tokenSubject, preferredUsername, tokenEmail);
 
                         if (resolvedRole == null)
                         {
-                            // Fallback to OidcUserIdentifier for backwards compat when groups don't match (single-user installations)
-                            var configuredUser = configFileProvider.OidcUserIdentifier;
-                            var fallbackSubject = context.Principal?.FindFirst("sub")?.Value;
-                            var fallbackUsername = context.Principal?.FindFirst("preferred_username")?.Value
-                                ?? context.Principal?.FindFirst("email")?.Value
-                                ?? fallbackSubject;
-                            var fallbackEmail = context.Principal?.FindFirst("email")?.Value;
+                            var subjectForLog = tokenSubject ?? preferredUsername ?? tokenEmail;
 
-                            if (!string.IsNullOrWhiteSpace(configuredUser) &&
-                                (string.Equals(fallbackUsername, configuredUser, StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(fallbackSubject, configuredUser, StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(fallbackEmail, configuredUser, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                Logger.Info("OIDC user {0} authorized via OidcUserIdentifier fallback (groups [{1}] not in mapping)",
-                                    fallbackUsername ?? fallbackSubject ?? "unknown",
-                                    string.Join(",", groups));
-                                resolvedRole = SonarrRole.Admin;
-                            }
-                            else
-                            {
-                                var subjectForLog = fallbackSubject
-                                    ?? fallbackUsername
-                                    ?? fallbackEmail;
+                            Logger.Warn("OIDC user {0} rejected: groups [{1}] not in allow list",
+                                subjectForLog ?? "unknown",
+                                string.Join(",", groups));
 
-                                Logger.Warn("OIDC user {0} rejected: groups [{1}] not in allow list",
-                                    subjectForLog ?? "unknown",
-                                    string.Join(",", groups));
+                            context.Fail("User is not authorized: insufficient group membership");
+                            context.HandleResponse();
+                            context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=insufficient_group");
 
-                                context.Fail("User is not authorized: insufficient group membership");
-                                context.HandleResponse();
-                                context.Response.Redirect(configFileProvider.UrlBase + "/login?ssoFailed=insufficient_group");
-
-                                return Task.CompletedTask;
-                            }
+                            return Task.CompletedTask;
                         }
 
                         var principal = context.Principal;
@@ -587,6 +569,48 @@ namespace Sonarr.Http.Authentication
                 });
 
             return authenticationBuilder.AddCookie(nameof(AuthenticationType.Forms));
+        }
+
+        public static SonarrRole? ResolveOidcRole(IEnumerable<string> groups, string roleMappings, string configuredUser, string subject, string preferredUsername, string email)
+        {
+            var resolved = OidcGroupMapping.Resolve(groups, roleMappings);
+            if (resolved.HasValue)
+            {
+                return resolved.Value;
+            }
+
+            // When role mappings are configured, an unresolved result is a denied outcome
+            // (fail closed). The legacy OidcUserIdentifier fallback only applies when no
+            // mappings are configured at all.
+            if (!string.IsNullOrWhiteSpace(roleMappings))
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(configuredUser))
+            {
+                return null;
+            }
+
+            var fallbackUsername = preferredUsername;
+            if (string.IsNullOrWhiteSpace(fallbackUsername))
+            {
+                fallbackUsername = email;
+            }
+
+            if (string.IsNullOrWhiteSpace(fallbackUsername))
+            {
+                fallbackUsername = subject;
+            }
+
+            if (string.Equals(fallbackUsername, configuredUser, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(subject, configuredUser, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(email, configuredUser, StringComparison.OrdinalIgnoreCase))
+            {
+                return SonarrRole.Admin;
+            }
+
+            return null;
         }
 
         public static IEnumerable<string> GetGroups(ClaimsPrincipal principal, string claimName)
